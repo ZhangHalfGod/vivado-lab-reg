@@ -114,6 +114,8 @@ After **Connect**, **Targets** lists the register targets from that scan (id + n
 
 These smoke values are the **Master Base Address** from Vivado Address Editor (where that master sees offset 0), not the slave's own base of `0x0`. `0x0` in the profile means skip that smoke read.
 
+`python addr_map.py examples/address.xlsx` lists those Master Base Addresses for one Vivado export layout. The workbook in `examples/` is fictional. A different spreadsheet is a different format — [use AI to adapt](docs/address-map-import.md) the parser. `--suggest-profile` prints a snippet for `profiles/private/` and does not write the file.
+
 Do not poke a MicroBlaze address through JTAG2AXI (often `DEC0DE1C` decode fail). Do not poke a JTAG-to-AXI-only window through MicroBlaze.
 
 A `JTAG2AXI` row is the same class as Hardware Manager `hw_axi` (Jtag Master). One scan on a Virtex UltraScale+ FPGA showed two of them; the ids change when the chain changes. In the GUI, select the scanned row. CLI `jtag n` still means the nth JTAG2AXI in that scan.
@@ -169,6 +171,13 @@ xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 ```
 
 The GUI setup page stores that path in `%APPDATA%\VivadoLabReg\config.json` and passes it into the XSDB session on Connect, so **Verify paths** matches the CLI. See [profiles/README.md](profiles/README.md).
+
+List the fictional reference map, or print a profile snippet (copy it into `profiles/private/`; the command does not write the file). Other spreadsheet layouts: [use AI to adapt](docs/address-map-import.md).
+
+```bat
+python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
+python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-profile
+```
 
 ---
 

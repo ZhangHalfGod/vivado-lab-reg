@@ -43,7 +43,23 @@ The Windows GUI setup page can remember the `.tcl` path in `%APPDATA%\VivadoLabR
 
 `verify` with no profile still connects and scans. Both addresses stay `0x0`, and both reads are skipped.
 
-Address Map import is separate and is not wired to these variables yet.
+## Draft the two addresses from a spreadsheet
+
+`addr_map.py` reads one Vivado-style export (`Name`, `Interface`, `Slave Segment`, `Master Base Address`, …). It prints the **Master Base Address** (what XSDB uses) and ignores Slave Base `0x0`.
+
+That parser is a reference for this column layout. Other exports differ. **Use AI to adapt:** give it [the import note](../docs/address-map-import.md) and your own file, and ask it to change the adapter or to fill these two variables. Do not assume every board shares one table.
+
+```bat
+python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
+python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-profile
+```
+
+```bash
+python addr_map.py examples/address.xlsx --path mb
+python addr_map.py --xlsx examples/address.xlsx --suggest-profile --mb-name example_ip_a --jtag-name example_ip_b
+```
+
+`--suggest-profile` prints Tcl on the terminal. Copy it into `profiles/private/`. The command does not write that directory and does not commit anything. `examples/address.xlsx` is fictional (`/example_ip_a` at `0x1000_0000`, `/example_ip_b` at `0x2000_0000`).
 
 ## 中文
 
@@ -80,4 +96,15 @@ Windows GUI 的设置页会把这个 `.tcl` 路径记在 `%APPDATA%\VivadoLabReg
 
 不带 profile 的 `verify` 仍会连接并扫描；两个地址保持 `0x0`，两次 `mrd` 都会跳过。
 
-Address Map 导入与这两个变量尚未打通。
+## 从表格起草这两个地址
+
+`addr_map.py` 读取一种 Vivado 导出（`Name`、`Interface`、`Slave Segment`、`Master Base Address` 等）。它打印的是 **Master Base Address**（XSDB 用这个），并忽略 Slave Base `0x0`。
+
+这个解析器只是该列布局的参考实现。别人的导出不一定一样。**请使用 AI 进行适配：** 把 [导入说明](../docs/address-map-import.md) 和你自己的文件交给 AI，让它改适配器，或填上这两个变量。不要假设每块板都是同一张表。
+
+```bat
+python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
+python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-profile
+```
+
+`--suggest-profile` 把 Tcl 打印到终端。抄进 `profiles/private/`。命令不会写这个目录，也不会提交。`examples/address.xlsx` 是虚构的（`/example_ip_a` 为 `0x1000_0000`，`/example_ip_b` 为 `0x2000_0000`）。
