@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 > **本仓做什么**：Windows GUI + CLI，常驻 **XSDB** 会话，**扫描** JTAG 链，从列表里选一个寄存器 target（id + 名字），再 `mrd` / `mwr` / 写后读回。  
-> **验证过**：`xcvu37p` + Vivado Lab 2022.2（`tool.tcl` 里的 smoke 基址是板相关示例，请用 [board profile](profiles/README.md) 覆盖）。  
+> **验证过**：Virtex UltraScale+ + Vivado Lab 2022.2（`tool.tcl` 里的 smoke 基址是板相关示例，请用 [board profile](profiles/README.md) 覆盖）。  
 > **不是**：完整 Vivado/Vitis、下 bitstream、ILA，或替代 Hardware Manager。需自备 **Vivado Lab**（本仓不分发）。
 
 ---
@@ -53,9 +53,9 @@
                               └─ Debug Hub → JTAG2AXI       （jtag / Jtag Master）
 ```
 
-原理不绑死 VU37P：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。GUI 按 id 和名字列出当次扫描到的寄存器 target，由你点选。VU37P 只是验证过的一块板。
+原理不绑死某一块板：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。GUI 按 id 和名字列出当次扫描到的寄存器 target，由你点选。
 
-对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**。换板或换 bitstream 后点 **Refresh targets** 再选一次，smoke 基址也要换成那块板的 Address Map（所以才要 board profile）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
+验证用的是 **Virtex UltraScale+** FPGA。对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**。换板或换 bitstream 后点 **Refresh targets** 再选一次，smoke 基址也要换成那块板的 Address Map（所以才要 board profile）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
 
 和板型无关、真正通用的是：不装完整 Vivado/Vitis，只借 Lab 的 JTAG 会话做寄存器 peek/poke。
 
@@ -107,14 +107,14 @@ History 最多保留最近 100 次读写。里面的 Address / Data 显示为 8 
 
 **Connect** 之后，**Targets** 列出当次扫描到的寄存器 target（id + 名字）。选中一行，再用属于这个 target 的地址表。MicroBlaze 和 JTAG-to-AXI 的地址空间仍然不同。
 
-| Target 类型 | 命令行 | 地址依据 | 示例 smoke（VU37P 实验） |
+| Target 类型 | 命令行 | 地址依据 | 示例 smoke（Virtex UltraScale+ 实验） |
 | --- | --- | --- | --- |
 | MicroBlaze | `rd` / `wr` / `smoke` | **microblaze_0 / Data** Address Map | `0x11080000` |
 | JTAG-to-AXI（Jtag Master） | `jrd` / `jwr` / `jsmoke` | 该 JTAG2AXI 后面的 Address Map | `0x116BCC00` |
 
 不要把 MB 地址用到 JTAG2AXI 上（常见 `DEC0DE1C` 译码失败）。不要把仅属于 Jtag Master 窗口的 `0x116BCxxx` 用到 MicroBlaze 上。
 
-列表里的 `JTAG2AXI` 与 Hardware Manager 的 `hw_axi`（Jtag Master）是同一类。VU37P 某次扫描里出现过两条；链一变，id 就会变。GUI 里选扫描出来的那一行即可。命令行的 `jtag n` 仍表示当次扫描里的第 n 条 JTAG2AXI。
+列表里的 `JTAG2AXI` 与 Hardware Manager 的 `hw_axi`（Jtag Master）是同一类。Virtex UltraScale+ 某次扫描里出现过两条；链一变，id 就会变。GUI 里选扫描出来的那一行即可。命令行的 `jtag n` 仍表示当次扫描里的第 n 条 JTAG2AXI。
 
 Lab 只谈 JTAG/调试协议。本仓只用：`connect` / `targets` / `mrd` / `mwr`。
 
