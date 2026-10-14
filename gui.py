@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Vivado Lab XSDB register GUI: MicroBlaze + JTAG2AXI."""
+"""Vivado Lab XSDB register GUI: scan targets, then peek/poke the one you select."""
 
 from __future__ import annotations
 
@@ -40,16 +40,49 @@ DONE = "__XSDB_DONE__"
 READY = "GUI_READY"
 HEX_RE = re.compile(r"^(?:0x)?[0-9A-Fa-f_]+$", re.I)
 MRD_RE = re.compile(r"^\s*([0-9A-Fa-f]+):\s+([0-9A-Fa-f]+)\s*$", re.I)
+TGT_RE = re.compile(r"^TGT\s+(\d+)\s+(.+)$")
 HISTORY_MAX = 100
 APP_NAME = "VivadoLabReg"
 # Windows file dialog label for This PC
 THIS_PC = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"
+_LOG_SKIP = {"CONNECT_OK", "TGT_NONE"}
 
-PATH_NAME = {
-    "mb": "MicroBlaze",
-    "j1": "JTAG2AXI #1 (Jtag Master)",
-    "j2": "JTAG2AXI #2 (Jtag Master)",
-}
+
+def parse_target_lines(text: str) -> list[tuple[str, str]]:
+    """Pull `TGT <id> <name>` rows out of an XSDB scan. Other lines are ignored."""
+    rows: list[tuple[str, str]] = []
+    for line in (text or "").splitlines():
+        match = TGT_RE.match(line.strip())
+        if not match:
+            continue
+        rows.append((match.group(1), match.group(2).strip()))
+    return rows
+
+
+def normalize_targets(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    cleaned: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for tid, name in rows:
+        tid_s = str(tid).strip()
+        name_s = str(name).strip()
+        if not tid_s.isdigit() or not name_s or tid_s in seen:
+            continue
+        seen.add(tid_s)
+        cleaned.append((tid_s, name_s))
+    return cleaned
+
+
+def connect_ok(text: str) -> bool:
+    return any(line.strip() == "CONNECT_OK" for line in (text or "").splitlines())
+
+
+def target_iid(tid: str) -> str:
+    return f"t{tid}"
+
+
+def log_body(text: str) -> str:
+    lines = [line for line in (text or "").splitlines() if line.strip() not in _LOG_SKIP]
+    return "\n".join(lines).strip()
 
 
 def validate_xsdb(raw: str) -> Path | None:
@@ -220,7 +253,12 @@ class App(tk.Tk):
         self.session: XsdbSession | None = None
         self.connected = False
         self.busy = False
-        self.path_var = tk.StringVar(value="mb")
+        self.targets: list[tuple[str, str]] = []
+        self.selected_id: str | None = None
+        self.selected_name: str | None = None
+        self._pending_id: str | None = None
+        self._pending_name: str | None = None
+        self._filling_targets = False
         self.addr_var = tk.StringVar(value="")
         self.len_var = tk.StringVar(value="1")
         self.data_var = tk.StringVar(value="00000001")
@@ -230,6 +268,7 @@ class App(tk.Tk):
         self.setup_msg_var = tk.StringVar(
             value="Choose xsdb.bat from Vivado Lab. Continue opens the main window."
         )
+        self.target_msg = tk.StringVar(value="Connect to scan targets on the JTAG chain.")
         saved = load_saved_xsdb()
         if saved:
             self.setup_path_var.set(saved)
@@ -352,7 +391,7 @@ class App(tk.Tk):
             label="About",
             command=lambda: messagebox.showinfo(
                 "About",
-                "Vivado Lab Reg\nXSDB register peek/poke\nMicroBlaze & JTAG-to-AXI\nMIT License",
+                "Vivado Lab Reg\nXSDB register peek/poke\nScanned MicroBlaze and JTAG-to-AXI targets\nMIT License",
             ),
         )
         menubar.add_cascade(label="Help", menu=help_m)
@@ -362,12 +401,12 @@ class App(tk.Tk):
         bar = ttk.Frame(root, padding=(10, 8))
         bar.grid(row=0, column=0, sticky="ew")
         ttk.Label(bar, text="Status").pack(side="left")
-        self.status_label = ttk.Label(bar, textvariable=self.status_var, width=28)
+        self.status_label = ttk.Label(bar, textvariable=self.status_var)
         self.status_label.pack(side="left", padx=(6, 16))
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
         ttk.Button(bar, text="Connect", command=self._connect).pack(side="left", padx=2)
         ttk.Button(bar, text="Disconnect", command=self._disconnect).pack(side="left", padx=2)
-        ttk.Button(bar, text="Refresh targets", command=self._targets).pack(side="left", padx=2)
+        ttk.Button(bar, text="Refresh targets", command=self._refresh_targets).pack(side="left", padx=2)
         ttk.Button(bar, text="Verify paths", command=self._verify).pack(side="left", padx=2)
         ttk.Button(bar, text="Clear", command=self._clear).pack(side="left", padx=2)
 
@@ -384,38 +423,35 @@ class App(tk.Tk):
         body.columnconfigure(1, weight=2)
         body.rowconfigure(1, weight=1)
 
-        pathf = ttk.LabelFrame(body, text="Access path", padding=8)
+        pathf = ttk.LabelFrame(body, text="Targets", padding=8)
         pathf.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 6))
         ttk.Label(
             pathf,
-            text="Selecting a path only switches the XSDB target (no address required).",
+            text="Selecting a target only switches the XSDB target (no address required).",
             wraplength=360,
             foreground="#555555",
         ).pack(anchor="w", pady=(0, 6))
-        ttk.Radiobutton(
-            pathf,
-            text="MicroBlaze — JTAG → XSDB → MDM → MB",
-            value="mb",
-            variable=self.path_var,
-            command=self._on_path,
-        ).pack(anchor="w", pady=2)
-        ttk.Radiobutton(
-            pathf,
-            text="JTAG2AXI #1 — Jtag Master (hw_axi_1)",
-            value="j1",
-            variable=self.path_var,
-            command=self._on_path,
-        ).pack(anchor="w", pady=2)
-        ttk.Radiobutton(
-            pathf,
-            text="JTAG2AXI #2 — Jtag Master (hw_axi_2)",
-            value="j2",
-            variable=self.path_var,
-            command=self._on_path,
-        ).pack(anchor="w", pady=2)
+        list_wrap = ttk.Frame(pathf)
+        list_wrap.pack(fill="both", expand=True)
+        self.target_tree = ttk.Treeview(
+            list_wrap,
+            columns=("id", "name"),
+            show="headings",
+            height=8,
+            selectmode="browse",
+        )
+        self.target_tree.heading("id", text="ID")
+        self.target_tree.heading("name", text="Name")
+        self.target_tree.column("id", width=52, stretch=False, anchor="w")
+        self.target_tree.column("name", width=220, stretch=True, anchor="w")
+        target_scroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.target_tree.yview)
+        self.target_tree.configure(yscrollcommand=target_scroll.set)
+        self.target_tree.pack(side="left", fill="both", expand=True)
+        target_scroll.pack(side="right", fill="y")
+        self.target_tree.bind("<<TreeviewSelect>>", self._on_target_pick)
         ttk.Label(
             pathf,
-            text="Listed paths match this lab bitstream. Other boards may differ — use Refresh targets.",
+            textvariable=self.target_msg,
             wraplength=360,
             foreground="#555555",
         ).pack(anchor="w", pady=(8, 0))
@@ -469,8 +505,36 @@ class App(tk.Tk):
             foreground="#555555",
         ).pack(side="left")
 
-    def _path_name(self) -> str:
-        return PATH_NAME.get(self.path_var.get(), self.path_var.get())
+    def _target_label(self) -> str:
+        if not self.selected_id:
+            return "no target"
+        if self.selected_name:
+            return f"{self.selected_name} (id {self.selected_id})"
+        return f"id {self.selected_id}"
+
+    def _refresh_status(self) -> None:
+        if self.busy:
+            self.status_var.set("Busy…")
+        elif not self.connected:
+            self.status_var.set("Disconnected")
+        elif self.selected_id:
+            self.status_var.set(f"Connected · {self._target_label()}")
+        elif not self.targets:
+            self.status_var.set("Connected · no targets")
+        else:
+            self.status_var.set("Connected · select a target")
+
+    def _sync_target_message(self) -> None:
+        if not self.connected:
+            self.target_msg.set("Connect to scan targets on the JTAG chain.")
+        elif not self.targets:
+            self.target_msg.set(
+                "No register targets found. Power the board, load a bitstream, then Refresh targets."
+            )
+        else:
+            self.target_msg.set(
+                "Select a scanned target, then Read or Write. Refresh targets after changing the board or bitstream."
+            )
 
     def _log(self, text: str) -> None:
         self.log.insert("end", text.rstrip() + "\n")
@@ -478,12 +542,7 @@ class App(tk.Tk):
 
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
-        if busy:
-            self.status_var.set("Busy…")
-        elif self.connected:
-            self.status_var.set(f"Connected · {self._path_name()} selected")
-        else:
-            self.status_var.set("Disconnected")
+        self._refresh_status()
 
     def _need_session(self) -> bool:
         if not self.session or not self.connected or not self.session.alive:
@@ -513,25 +572,45 @@ class App(tk.Tk):
 
     def _done(self, title: str, cmd: str, out: str, err: str | None, kind: str = "cmd",
               hist: list[tuple[str, str, str]] | None = None) -> None:
-        self._set_busy(False)
-        if err or (out and out.startswith("ERROR")):
+        self.busy = False
+        failed = bool(err) or bool(out and out.startswith("ERROR"))
+        if failed:
             self.connected = bool(self.session and self.session.alive)
+            if not self.connected:
+                self.selected_id = None
+                self.selected_name = None
+                self._pending_id = None
+                self._pending_name = None
+                self._fill_targets([])
+            elif kind == "select":
+                self._pending_id = None
+                self._pending_name = None
+                self._highlight_target(self.selected_id)
             msg = err or out
+            self._refresh_status()
             self._log(msg)
-            if not self.session or not self.session.alive:
-                self.status_var.set("Disconnected")
             messagebox.showerror(title, msg)
             return
         if kind == "select":
-            extra = ""
-            if self.path_var.get() == "j2":
-                extra = " For Master, enter the address yourself."
+            self.selected_id = self._pending_id
+            self.selected_name = self._pending_name
+            self._refresh_status()
             self._log(
-                f"Connected: {self._path_name()} selected (registers not read). For R/W, enter the address manually.{extra}"
+                f"Selected {self._target_label()} (registers not read). "
+                "Enter an address for Read / Write."
             )
             if out:
                 self._log(out)
             return
+        if kind == "enum":
+            body = log_body(out)
+            if body:
+                self._log(body)
+            else:
+                self._log("(no output)")
+            self._fill_targets(parse_target_lines(out))
+            return
+        self._refresh_status()
         if out:
             self._log(out)
             self._record_hist(out, hist)
@@ -575,17 +654,92 @@ class App(tk.Tk):
             self.addr_var.set(vals[0])
             self.data_var.set(vals[1])
 
-    def _switch_cmd(self) -> str:
-        p = self.path_var.get()
-        if p == "j1":
-            return "jtag 1"
-        if p == "j2":
-            return "jtag 2"
-        return "mb"
+    def _highlight_target(self, tid: str | None) -> None:
+        self._filling_targets = True
+        try:
+            current = list(self.target_tree.selection())
+            iid = target_iid(tid) if tid else ""
+            if iid and self.target_tree.exists(iid):
+                if tuple(current) != (iid,):
+                    self.target_tree.selection_set(iid)
+                    self.target_tree.see(iid)
+            elif current:
+                self.target_tree.selection_remove(*current)
+        finally:
+            self._filling_targets = False
 
-    def _on_path(self) -> None:
-        if self.connected:
-            self._run("Switch path", self._switch_cmd(), kind="select")
+    def _fill_targets(self, rows: list[tuple[str, str]]) -> None:
+        prev = self.selected_id
+        cleaned = normalize_targets(rows)
+        self._filling_targets = True
+        try:
+            children = self.target_tree.get_children()
+            if children:
+                self.target_tree.delete(*children)
+            self.targets = cleaned
+            for tid, name in cleaned:
+                self.target_tree.insert("", "end", iid=target_iid(tid), values=(tid, name))
+        finally:
+            self._filling_targets = False
+        self._sync_target_message()
+        if not self.connected:
+            self.selected_id = None
+            self.selected_name = None
+            self._pending_id = None
+            self._pending_name = None
+            self._refresh_status()
+            return
+        keep: tuple[str, str] | None = None
+        if prev:
+            for tid, name in cleaned:
+                if tid == prev:
+                    keep = (tid, name)
+                    break
+        if keep is None:
+            self.selected_id = None
+            self.selected_name = None
+            self._pending_id = None
+            self._pending_name = None
+            self._highlight_target(None)
+            self._refresh_status()
+            return
+        self._pending_id, self._pending_name = keep
+        self._highlight_target(keep[0])
+        self._run("Select target", f"select_id {keep[0]}", kind="select")
+
+    def _on_target_pick(self, _evt=None) -> None:
+        if self._filling_targets:
+            return
+        sel = self.target_tree.selection()
+        picked = str(sel[0]) if sel else ""
+        if self.busy or not self.connected:
+            keep = self.selected_id or (self._pending_id if self.busy else None)
+            keep_iid = target_iid(keep) if keep else ""
+            if picked != keep_iid:
+                self._highlight_target(keep)
+            return
+        if not picked:
+            return
+        vals = self.target_tree.item(picked, "values")
+        if len(vals) < 2:
+            return
+        tid, name = str(vals[0]), str(vals[1])
+        if not tid.isdigit():
+            return
+        if tid == self.selected_id:
+            return
+        self._pending_id = tid
+        self._pending_name = name
+        self._run("Select target", f"select_id {tid}", kind="select")
+
+    def _require_target(self) -> str | None:
+        if not self.selected_id or not str(self.selected_id).isdigit():
+            messagebox.showinfo(
+                "Select a target",
+                "Select a target from the scan list before Read or Write.",
+            )
+            return None
+        return f"select_id {self.selected_id}"
 
     def _connect(self) -> None:
         if self.busy:
@@ -601,7 +755,7 @@ class App(tk.Tk):
             out = ""
             try:
                 sess.start()
-                out = sess.call("xconnect", timeout=40)
+                out = sess.call("gui_connect", timeout=40)
             except Exception as exc:
                 err = str(exc)
                 sess.close()
@@ -612,23 +766,35 @@ class App(tk.Tk):
         threading.Thread(target=work, daemon=True).start()
 
     def _connected(self, out: str, err: str | None) -> None:
-        self._set_busy(False)
-        if err:
+        self.busy = False
+        if err or not connect_ok(out):
             self.connected = False
-            self.status_var.set("Disconnected")
-            self._log(err)
-            messagebox.showerror("Connect failed", err)
+            self.selected_id = None
+            self.selected_name = None
+            self._pending_id = None
+            self._pending_name = None
+            if self.session:
+                self.session.close()
+            self._fill_targets([])
+            msg = err or out or "Connect failed"
+            self._log(msg)
+            messagebox.showerror("Connect failed", msg)
             return
         self.connected = True
-        if out:
-            self._log(out)
-        self._run("Switch path", self._switch_cmd(), kind="select")
+        body = log_body(out)
+        if body:
+            self._log(body)
+        self._fill_targets(parse_target_lines(out))
 
     def _disconnect(self) -> None:
         if self.session:
             self.session.close()
         self.connected = False
-        self.status_var.set("Disconnected")
+        self.selected_id = None
+        self.selected_name = None
+        self._pending_id = None
+        self._pending_name = None
+        self._fill_targets([])
         self._log("Disconnected")
 
     def _clear(self) -> None:
@@ -637,8 +803,8 @@ class App(tk.Tk):
         self.log.delete("1.0", "end")
         self._log("Cleared log and last 100 R/W entries")
 
-    def _targets(self) -> None:
-        self._run("targets", "targets")
+    def _refresh_targets(self) -> None:
+        self._run("Refresh targets", "enum_targets", timeout=40, kind="enum")
 
     def _verify(self) -> None:
         self._run("Verify", "verify_all", timeout=40)
@@ -653,7 +819,12 @@ class App(tk.Tk):
         if n < 1 or n > 256:
             messagebox.showerror("Input", "Length must be 1–256")
             return
-        self._run("Read", f"{self._switch_cmd()}; rd {addr} {n}")
+        if not self._need_session():
+            return
+        prefix = self._require_target()
+        if prefix is None:
+            return
+        self._run("Read", f"{prefix}; rd {addr} {n}")
 
     def _wr(self) -> None:
         try:
@@ -662,7 +833,12 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showinfo("Address required", "Write needs address and data; fill them in manually.")
             return
-        self._run("Write", f"{self._switch_cmd()}; wr {addr} {data}",
+        if not self._need_session():
+            return
+        prefix = self._require_target()
+        if prefix is None:
+            return
+        self._run("Write", f"{prefix}; wr {addr} {data}",
                   hist=[("Write", addr, data)])
 
     def _wrd(self) -> None:
@@ -672,7 +848,12 @@ class App(tk.Tk):
         except Exception as exc:
             messagebox.showinfo("Address required", "Write+Readback needs address and data; fill them in manually.")
             return
-        self._run("Write+Readback", f"{self._switch_cmd()}; wrd {addr} {data}",
+        if not self._need_session():
+            return
+        prefix = self._require_target()
+        if prefix is None:
+            return
+        self._run("Write+Readback", f"{prefix}; wrd {addr} {data}",
                   hist=[("Write", addr, data)])
 
     def _on_close(self) -> None:
