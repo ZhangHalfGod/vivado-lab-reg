@@ -13,7 +13,7 @@
 [![GUI](https://img.shields.io/badge/GUI-Tk%20%2F%20pythonw-informational)](#windows-gui-recommended)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **What this repo is**: Windows GUI + CLI that keep a resident **XSDB** session, switch **MicroBlaze** / **JTAG2AXI #1** / **JTAG2AXI #2** by target **name**, then `mrd` / `mwr` / write-and-read-back.  
+> **What this repo is**: Windows GUI + CLI that keep a resident **XSDB** session, **scan** the JTAG chain, and let you pick a register target from the list (id + name), then `mrd` / `mwr` / write-and-read-back.  
 > **Validated**: `xcvu37p` + Vivado Lab 2022.2 (example smoke bases in `tool.tcl` are board-specific — override with a [board profile](profiles/README.md)).  
 > **Not**: full Vivado/Vitis, bitstream download, ILA, or Hardware Manager replacement. You must install **Vivado Lab** yourself (not redistributed here).
 
@@ -21,11 +21,11 @@
 
 ## Daily lab process
 
-1. **Prep.** Cable up, bitstream already loaded with MicroBlaze and/or JTAG2AXI. Close Hardware Manager so it does not hold JTAG. Put Lab `bin` on `PATH` or set `XSDB`. [Before you start](#before-you-start)
-2. **GUI.** Run `gui.cmd` (or `pythonw gui.py`). Connect, pick a path, read/write. [Windows GUI](#windows-gui-recommended)
-3. **CLI verify.** `xsdb.cmd verify` (or `./xsdb.sh verify`) exercises MB + both JTAG2AXI paths. [Quick verify](#quick-verify)
+1. **Prep.** Board powered, bitstream loaded, Hardware Manager closed. On the setup page, pick `xsdb.bat` if it is not already saved. CLI can also use Lab `bin` on `PATH` or `XSDB`. [Before you start](#before-you-start)
+2. **GUI.** Run `gui.cmd` (or `pythonw gui.py`). **Connect** scans the chain; select one row from **Targets**; then Read/Write. [Windows GUI](#windows-gui-recommended)
+3. **CLI verify.** `xsdb.cmd verify` (or `./xsdb.sh verify`) reads the MicroBlaze smoke base and each JTAG2AXI the scan finds. [Quick verify](#quick-verify)
 4. **Interactive.** `xsdb.cmd` then `mb` / `jtag 1` / `smoke` / `rd` / `wr`. [CLI](#cli)
-5. **Board change.** Re-enumerate targets; replace smoke bases via profile. [How it works](#how-it-works--board-support)
+5. **Board change.** Click **Refresh targets** and select again; replace smoke bases via profile. [How it works](#how-it-works--board-support)
 
 Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md).
 
@@ -53,9 +53,9 @@ User script / GUI  →  XSDB  →  hw_server  →  FPGA
                               └─ Debug Hub → JTAG2AXI          (jtag / Jtag Master)
 ```
 
-This tool does **not** hard-code VU37P. It uses **Vivado Lab XSDB → hw_server → JTAG**, then `mrd` / `mwr` on targets found on the scan chain. Targets are selected by **name** (MicroBlaze / JTAG2AXI / Jtag Master), not by fixed target numbers.
+This tool does **not** hard-code VU37P. It uses **Vivado Lab XSDB → hw_server → JTAG**, then `mrd` / `mwr` on targets found on the scan chain. The GUI lists those register targets with id and name; you select a row from that scan.
 
-**VU37P** is the board used for validation. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards, re-enumerate targets (indices change) and replace smoke base addresses with that board's Address Map (use a board profile). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
+**VU37P** is the board used for validation. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards or bitstreams, click **Refresh targets** and select again, and replace smoke base addresses with that board's Address Map (use a board profile). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
 
 What stays the same across boards: no full Vivado/Vitis install — only a Lab JTAG session for register peek/poke.
 
@@ -77,10 +77,14 @@ pythonw gui.py
 
 Typical flow:
 
-1. Click **Connect** — starts a resident XSDB session (do not share JTAG with Hardware Manager).
-2. Pick a path: MicroBlaze / JTAG2AXI #1 / JTAG2AXI #2. **Path switch only changes target; it does not need an address.**
-3. Enter address and data; **Read / Write / Write+Readback**.
-4. Keeps the last 100 read/write history rows.
+1. **Prep.** Board powered, bitstream loaded, Hardware Manager closed. On the setup page, pick `xsdb.bat` if needed (for example `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`), then **Continue**.
+2. Click **Connect** — starts XSDB and **scans** the JTAG chain.
+3. The **Targets** list shows whatever register targets were found (for example MicroBlaze #0, JTAG2AXI, …) with id and name. These are **not hard-coded slots**. If the list is empty, power the board, load the bitstream, then **Refresh targets**.
+4. **Select** a row. That only switches the XSDB target; no address is required yet.
+5. Enter address, length, and data, then **Read / Write / Write + Readback**.
+6. After changing the board or bitstream, click **Refresh targets** and select again.
+
+History keeps the last 100 read/write rows. Address and Data there are shown as 8 hex digits; XSDB’s own log may still print short addresses without leading zeros.
 
 Needs Python 3 (3.10 verified). Core logic matches `tool.tcl`.
 
@@ -90,7 +94,7 @@ Needs Python 3 (3.10 verified). Core logic matches `tool.tcl`.
 
 1. Board powered; bitstream loaded so MicroBlaze and/or JTAG2AXI are present.
 2. If Vivado Hardware Manager is attached, close it first to free JTAG.
-3. If `xsdb` is missing, add Lab `bin` to `PATH`, or set user env `XSDB`.
+3. For the GUI, choose `xsdb.bat` on the setup page. For the CLI, if `xsdb` is missing, add Lab `bin` to `PATH`, or set user env `XSDB`.
 
 Example paths:
 
@@ -101,14 +105,16 @@ Example paths:
 
 ## Access paths
 
-| Path | Commands | Address basis | Example smoke (VU37P lab) |
+After **Connect**, **Targets** lists the register targets from that scan (id + name). Select the row, then use the address map that belongs to it. MicroBlaze and JTAG-to-AXI still have different maps.
+
+| Target class | CLI commands | Address basis | Example smoke (VU37P lab) |
 | --- | --- | --- | --- |
 | MicroBlaze | `rd` / `wr` / `smoke` | **microblaze_0 / Data** Address Map | `0x11080000` |
-| Jtag Master | `jrd` / `jwr` / `jsmoke` | Address Map behind that JTAG2AXI | `0x116BCC00` |
+| JTAG-to-AXI (Jtag Master) | `jrd` / `jwr` / `jsmoke` | Address Map behind that JTAG2AXI | `0x116BCC00` |
 
-Do not poke an MB address through JTAG2AXI (often `DEC0DE1C` decode fail). Do not poke `0x116BCxxx` through MB if that window is Jtag Master only.
+Do not poke an MB address through JTAG2AXI (often `DEC0DE1C` decode fail). Do not poke `0x116BCxxx` through MicroBlaze if that window is Jtag Master only.
 
-`JTAG2AXI` is the same class as Hardware Manager `hw_axi_1` / `hw_axi_2`. On the VU37P lab, targets **5** / **6** were JTAG2AXI #1 / #2 — indices change with the scan chain; scripts enumerate by name.
+A `JTAG2AXI` row is the same class as Hardware Manager `hw_axi` (Jtag Master). One VU37P scan showed two of them; the ids change when the chain changes. In the GUI, select the scanned row. CLI `jtag n` still means the nth JTAG2AXI in that scan.
 
 Lab only speaks JTAG/debug. This repo only uses `connect` / `targets` / `mrd` / `mwr`.
 
@@ -126,10 +132,10 @@ Linux:
 ./xsdb.sh verify
 ```
 
-That run:
+That CLI run:
 
 1. Selects MicroBlaze and `mrd` of the MB smoke base.
-2. Selects JTAG2AXI #1 and #2 and `mrd` of the JTAG smoke base.
+2. Selects each JTAG2AXI the scan finds and `mrd` of the JTAG smoke base.
 
 ---
 
