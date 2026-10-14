@@ -84,6 +84,30 @@ Typical flow:
 5. Enter address, length, and data, then **Read / Write / Write + Readback**.
 6. After changing the board or bitstream, click **Refresh targets** and select again.
 
+### GUI walkthrough
+
+One session, five steps. **Connect** and **Targets** are the JTAG scan. They are not filled in from the workbook. The address map only lists Master Base Address values and can fill the Address field. **Read** and **Write** use the target row you selected.
+
+![1. Connect](docs/images/gui-walkthrough/01-connect.png)
+
+Click **Connect**. That starts XSDB and scans the JTAG chain.
+
+![2. Display Targets](docs/images/gui-walkthrough/02-targets.png)
+
+**Targets** lists the register targets from that scan (id and name).
+
+![3. Choose target](docs/images/gui-walkthrough/03-choose-target.png)
+
+Select one row, for example MicroBlaze #0. That switches the XSDB target. Read and Write use this row.
+
+![4. Import map](docs/images/gui-walkthrough/04-import-map.png)
+
+Type an address, or **Load / Import map**. A selected map row fills Address from that Master Base Address. The workbook does not select a JTAG target.
+
+![5. Read](docs/images/gui-walkthrough/05-read.png)
+
+Click **Read**. History and the log show the data for the selected target.
+
 **Address map (optional)** is on the setup page and the main window. Browse a workbook (prefer `address.xlsx`), then **Load / Import map**. The list is the **reference** Vivado layout (Master Base Address; Slave Base `0x0` is ignored). Select a row to fill the address field. **Suggest profile** / **Write private profile** build `::MB_SMOKE_ADDR` and `::JTAG_SMOKE_ADDR` from the rows you select, or from the CLI first match and its warning. Save starts at `profiles/private/lab.tcl` and does not overwrite without confirmation. The workbook path is stored in `%APPDATA%\VivadoLabReg\config.json`. Other spreadsheet formats: [use AI to adapt](docs/address-map-import.md).
 
 History keeps the last 100 read/write rows. Address and Data there are shown as 8 hex digits; XSDB’s own log may still print short addresses without leading zeros.

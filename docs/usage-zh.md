@@ -104,6 +104,30 @@ GUI / XSDB
    - 数据：写操作用，如 `00000001`
 6. 换板或换 bitstream 后，点 **Refresh targets**，再重新选一行。
 
+### 分步截图
+
+和上面的步骤对应。**Connect** / **Targets** 是 JTAG 扫描，不是从 xlsx 自动识别 target。地址表只提供 Master Base Address，选中一行会填进 Address。**Read** / **Write** 用的是选中的 target。
+
+![1. Connect](images/gui-walkthrough/01-connect.png)
+
+1. 点 **Connect**，扫描 JTAG 链。
+
+![2. 显示 Targets](images/gui-walkthrough/02-targets.png)
+
+2. **Targets** 列出扫到的 target。
+
+![3. 选 target 并连接](images/gui-walkthrough/03-choose-target.png)
+
+3. 选中一行（例如 MicroBlaze #0），切到该 XSDB target。
+
+![4. 手填或导入 address.xlsx](images/gui-walkthrough/04-import-map.png)
+
+4. 手填地址，或 **Load / Import map** 导入 `address.xlsx`。选中行把 Master Base Address 填进 Address。
+
+![5. Read 取数](images/gui-walkthrough/05-read.png)
+
+5. 点 **Read**，History 和日志里看到读回数据。
+
 设置页和主窗口都有 **Address map (optional)**。浏览工作簿（建议 `address.xlsx`），点 **Load / Import map** 可看到 Master Base 列表，选中一行会填进地址框。这个 GUI 用的是 **reference** Vivado 布局；别的格式 **请使用 AI 进行适配**，说明在 [地址表导入](address-map-import.md)。**Write private profile** 另存为 profile，默认 `profiles/private/lab.tcl`，覆盖前会询问。路径记在 `%APPDATA%\VivadoLabReg\config.json`。
 
 左侧 **History (last 100)**（新的在上，读/写都会记）；右侧是日志。History 的 Address / Data 显示为 8 位十六进制；XSDB 自己的日志里，短地址仍可能不补前导零。
