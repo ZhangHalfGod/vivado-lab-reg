@@ -7,7 +7,7 @@
 |----|----|
 | 工具目录 | `.` |
 | 启动 | 双击 `VivadoLabReg.exe` 或 `gui.cmd` |
-| 板卡 | VCU128 / `xcvu37p` |
+| 板卡 | Virtex UltraScale+ FPGA |
 | 软件 | Vivado Lab 2022.2 |
 | XSDB | `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` |
 | 地址表 | 同目录 `address_top.xlsx`（Address Editor 导出） |
@@ -263,10 +263,10 @@ Windows 命令行：`xsdb.cmd` 参数相同。
 
 ## 10. 本机 JTAG 链（编号会变，以当次扫描为准）
 
-下面是某次 VU37P 扫描的例子。下次连接，id 可能不同。**Targets** 显示的就是当次扫到的 id 和名字。
+下面是某次 Virtex UltraScale+ 扫描的例子。下次连接，id 可能不同。**Targets** 显示的就是当次扫到的 id 和名字。
 
 ```text
-1  xcvu37p
+1  Virtex UltraScale+ FPGA
    2  MicroBlaze Debug Module at USER2
       3  MicroBlaze #0     ← 会出现在 Targets
    4  Legacy Debug Hub
