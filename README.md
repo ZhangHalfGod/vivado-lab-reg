@@ -1,113 +1,141 @@
-# Vivado Lab XSDB 独立工具
+# vivado-lab-reg — Vivado Lab XSDB Register Peek/Poke
 
-**完整用法（Ubuntu 开发 + Windows GUI 对照）：**  
-[Windows图形化调试工具用法.md](docs/usage-zh.md)
+**Language / 语言:** [English](README.md) | [中文](README.zh-CN.md)
 
-适用：本机已安装 **Vivado Lab**（或完整 Vivado，自带同样的 `xsdb`）。
+> **Register peek/poke over Vivado Lab XSDB — MicroBlaze & JTAG-to-AXI — without installing full Vivado/Vitis.**
 
-同一条 JTAG 上有两条访问寄存器的路径，工具里用 `mb` / `jtag` 切换 target，然后都走 `mrd` / `mwr`：
+[![GitHub](https://img.shields.io/badge/GitHub-ZhangHalfGod%2Fvivado--lab--reg-blue?logo=github)](https://github.com/ZhangHalfGod/vivado-lab-reg)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Vivado Lab](https://img.shields.io/badge/Vivado_Lab-2022.2-EAE93F?logo=xilinx&logoColor=black)](https://www.xilinx.com/)
+[![XSDB](https://img.shields.io/badge/XSDB-hw__server%20%2F%20JTAG-0A7EA4)](#how-it-works--board-support)
+[![MicroBlaze](https://img.shields.io/badge/MicroBlaze-mrd%20%2F%20mwr-6B4FBB)](#access-paths)
+[![JTAG2AXI](https://img.shields.io/badge/JTAG--to--AXI-Jtag%20Master-C72C48)](#access-paths)
+[![GUI](https://img.shields.io/badge/GUI-Tk%20%2F%20pythonw-informational)](#windows-gui-recommended)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-```text
-用户脚本 → XSDB → hw_server → FPGA
-                         ├─ MDM → MicroBlaze → 外设          （mb）
-                         └─ Legacy Debug Hub → JTAG2AXI      （jtag / Jtag Master）
-```
+> **What this repo is**: Windows GUI + CLI that keep a resident **XSDB** session, switch **MicroBlaze** / **JTAG2AXI #1** / **JTAG2AXI #2** by target **name**, then `mrd` / `mwr` / write-and-read-back.  
+> **Validated**: `xcvu37p` + Vivado Lab 2022.2 (example smoke bases in `tool.tcl` are board-specific — override with a [board profile](profiles/README.md)).  
+> **Not**: full Vivado/Vitis, bitstream download, ILA, or Hardware Manager replacement. You must install **Vivado Lab** yourself (not redistributed here).
 
-`JTAG2AXI` 就是 Hardware Manager 里的 `hw_axi_1` / `hw_axi_2`（JTAG-to-AXI Master）。  
-本机 VU37P 实测：target **5** = JTAG2AXI #1，target **6** = JTAG2AXI #2（编号会随扫描链变，脚本按名字枚举）。
+---
 
-Lab 负责 JTAG/调试协议。工具只发：`connect` / `targets` / `mrd` / `mwr`。
+## Daily lab process
+
+1. **Prep.** Cable up, bitstream already loaded with MicroBlaze and/or JTAG2AXI. Close Hardware Manager so it does not hold JTAG. Put Lab `bin` on `PATH` or set `XSDB`. [Before you start](#before-you-start)
+2. **GUI.** Run `gui.cmd` (or `pythonw gui.py`). Connect, pick a path, read/write. [Windows GUI](#windows-gui-recommended)
+3. **CLI verify.** `xsdb.cmd verify` (or `./xsdb.sh verify`) exercises MB + both JTAG2AXI paths. [Quick verify](#quick-verify)
+4. **Interactive.** `xsdb.cmd` then `mb` / `jtag 1` / `smoke` / `rd` / `wr`. [CLI](#cli)
+5. **Board change.** Re-enumerate targets; replace smoke bases via profile. [How it works](#how-it-works--board-support)
+
+Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md).
+
+---
+
+## Table of contents
+
+- [Daily lab process](#daily-lab-process)
+- [How it works / board support](#how-it-works--board-support)
+- [Windows GUI (recommended)](#windows-gui-recommended)
+- [Before you start](#before-you-start)
+- [Access paths](#access-paths)
+- [Quick verify](#quick-verify)
+- [CLI](#cli)
+- [Packaging](#packaging)
+- [License](#license)
 
 ---
 
 ## How it works / board support
 
+```text
+User script / GUI  →  XSDB  →  hw_server  →  FPGA
+                              ├─ MDM → MicroBlaze → fabric     (mb)
+                              └─ Debug Hub → JTAG2AXI          (jtag / Jtag Master)
+```
+
 This tool does **not** hard-code VU37P. It uses **Vivado Lab XSDB → hw_server → JTAG**, then `mrd` / `mwr` on targets found on the scan chain. Targets are selected by **name** (MicroBlaze / JTAG2AXI / Jtag Master), not by fixed target numbers.
 
 **VU37P** is the board used for validation. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards, re-enumerate targets (indices change) and replace smoke base addresses with that board's Address Map (use a board profile). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
 
-### 原理与板型适配（中文）
+What stays the same across boards: no full Vivado/Vitis install — only a Lab JTAG session for register peek/poke.
 
-原理不绑死 VU37P：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。VU37P 只是验证过的一块板；工具按 **名字** 找 MicroBlaze / JTAG2AXI（Jtag Master），不按写死的 target 编号。
+---
 
-对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**；换板后 target 序号会变，要重新枚举，smoke 基址也要换成那块板的 Address Map（所以才要 board profile）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
+## Windows GUI (recommended)
 
-和板型无关、真正通用的是：不装完整 Vivado/Vitis，只借 Lab 的 JTAG 会话做寄存器 peek/poke。
-
-
-## Windows 图形界面（推荐）
-
-双击：
+Double-click:
 
 ```text
 gui.cmd
 ```
 
-或：
+Or:
 
 ```bat
 pythonw gui.py
 ```
 
-窗口里可以：
+Typical flow:
 
-1. 点 **连接**（内部启动一条常驻 XSDB 会话，不要和 Hardware Manager 同时占 JTAG）
-2. 选路径：MicroBlaze / JTAG2AXI #1 / JTAG2AXI #2  
-   **选路径只切换 target，成功即“已选中”，不需要地址。**
-3. 自己填写地址、长度、数据，点 **读 / 写 / 写+读回**
-4. 左侧保留最近 100 次读写（含读和写）
+1. Click **Connect** — starts a resident XSDB session (do not share JTAG with Hardware Manager).
+2. Pick a path: MicroBlaze / JTAG2AXI #1 / JTAG2AXI #2. **Path switch only changes target; it does not need an address.**
+3. Enter address and data; **Read / Write / Write+Readback**.
+4. Keeps the last 100 read/write history rows.
 
-依赖本机 Python 3（已用 3.10 验证）。逻辑与 `tool.tcl` 相同。
-
----
-
-## 使用前
-
-1. 板子上电，bitstream 已下载（链上能看到 MicroBlaze 和/或 JTAG2AXI）。
-2. 若 Vivado Hardware Manager 已连着板子，先关掉，避免抢 JTAG。
-3. 找不到 `xsdb` 时，把 Lab 的 `bin` 加进 PATH，或设置环境变量 `XSDB`。
-
-常见路径：
-
-- Windows：`D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` 或 `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
-- Linux：`/opt/Xilinx/Vivado_Lab/<version>/bin/xsdb`
+Needs Python 3 (3.10 verified). Core logic matches `tool.tcl`.
 
 ---
 
-## 两条路径用哪套地址
+## Before you start
 
-| 路径 | 命令 | 地址从哪来 | 本板验证地址 |
-|------|------|------------|--------------|
+1. Board powered; bitstream loaded so MicroBlaze and/or JTAG2AXI are present.
+2. If Vivado Hardware Manager is attached, close it first to free JTAG.
+3. If `xsdb` is missing, add Lab `bin` to `PATH`, or set user env `XSDB`.
+
+Example paths:
+
+- Windows: `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` or `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
+- Linux: `/opt/Xilinx/Vivado_Lab/<version>/bin/xsdb`
+
+---
+
+## Access paths
+
+| Path | Commands | Address basis | Example smoke (VU37P lab) |
+| --- | --- | --- | --- |
 | MicroBlaze | `rd` / `wr` / `smoke` | **microblaze_0 / Data** Address Map | `0x11080000` |
-| Jtag Master | `jrd` / `jwr` / `jsmoke` | 该 JTAG2AXI 所连 AXI 互联的 Address Map（如 PCIe xdma Lite 窗） | `0x116BCC00` |
+| Jtag Master | `jrd` / `jwr` / `jsmoke` | Address Map behind that JTAG2AXI | `0x116BCC00` |
 
-不要把 MB 地址拿到 JTAG2AXI 上读：本板 `0x11080000` 在 JTAG2AXI #1 上返回 `DEC0DE1C`（译码失败）。  
-不要把 `0x116BCxxx` 拿到 MB 上读（那是 Jtag Master 侧窗）。
+Do not poke an MB address through JTAG2AXI (often `DEC0DE1C` decode fail). Do not poke `0x116BCxxx` through MB if that window is Jtag Master only.
+
+`JTAG2AXI` is the same class as Hardware Manager `hw_axi_1` / `hw_axi_2`. On the VU37P lab, targets **5** / **6** were JTAG2AXI #1 / #2 — indices change with the scan chain; scripts enumerate by name.
+
+Lab only speaks JTAG/debug. This repo only uses `connect` / `targets` / `mrd` / `mwr`.
 
 ---
 
-## 方案 A：批处理（两条路径都验证）
+## Quick verify
 
 ```bat
 xsdb.cmd verify
 ```
 
-Linux：
+Linux:
 
 ```bash
 ./xsdb.sh verify
 ```
 
-会依次：
+That run:
 
-1. 选 MicroBlaze，`mrd 0x11080000 10`
-2. 选 JTAG2AXI #1、#2，各 `mrd 0x116BCC00 4`
+1. Selects MicroBlaze and `mrd` of the MB smoke base.
+2. Selects JTAG2AXI #1 and #2 and `mrd` of the JTAG smoke base.
 
 ---
 
-## 方案 B：交互
+## CLI
 
-Windows 双击 `xsdb.cmd`，或 Linux `./xsdb.sh`。连上后：
+Windows: double-click `xsdb.cmd`. Linux: `./xsdb.sh`. Then:
 
 ```tcl
 mb
@@ -118,73 +146,29 @@ jtag 1
 jsmoke
 rd 116BCC00 4
 wr 116BCC08 1
-wrd 116BCC08 1
-
-jtag 2
-rd 116BCC00 4
-path
 ```
 
-| 命令 | 作用 |
-|------|------|
-| `xconnect` | 重新 connect，列出两条路径 |
-| `mb` | 切到 MicroBlaze |
-| `jtag [n]` | 切到 Jtag Master（n=1 或 2，默认 1） |
-| `axi n` | 同 `jtag n`（对应 hw_axi_1 / hw_axi_2） |
-| `path` | 显示当前路径 |
-| `rd <addr> [len]` | 在**当前** target 上读 |
-| `wr <addr> <data>` | 在当前 target 上写 |
-| `wrd <addr> <data>` | 写完读回 |
-| `smoke` | MB：`mrd 0x11080000 10` |
-| `jsmoke [n]` | JTAG2AXI：`mrd 0x116BCC00 4` |
-| `verify_all` | 两条路径都跑一遍 |
-| `help_xsdb` | 帮助 |
-
-也可在已打开的 xsdb 里：
+Override example smoke bases before sourcing `tool.tcl` (see [profiles/README.md](profiles/README.md)):
 
 ```tcl
-source {./tool.tcl}
+set ::MB_SMOKE_ADDR   0x00000000
+set ::JTAG_SMOKE_ADDR 0x00000000
 ```
-
-Windows 路径请用**正斜杠**。
 
 ---
 
-## 单次命令（给别的程序调用）
+## Packaging
+
+Optional Windows exe (not committed):
 
 ```bat
-xsdb.cmd rd    11080000 10
-xsdb.cmd wr    11080000 12345678
-xsdb.cmd wrd   11080000 1
-xsdb.cmd jrd   116BCC00 4
-xsdb.cmd jrd2  116BCC00 4
-xsdb.cmd jwr   116BCC08 1
-xsdb.cmd jwrd  116BCC08 1
-xsdb.cmd targets
-xsdb.cmd verify
+build_exe.bat
 ```
+
+Produces `VivadoLabReg.exe` under `dist/` (gitignored). Prefer `gui.cmd` + Python for development.
 
 ---
 
-## 文件
+## License
 
-| 文件 | 对应 |
-|------|------|
-| `gui.cmd` / `gui.py` / `gui.tcl` | Windows 交互窗口 |
-| `reg.tcl` | 方案 A：两条路径批处理验证 |
-| `tool.tcl` | 方案 B：交互短命令（含 `mb` / `jtag`） |
-| `xsdb.cmd` | Windows 命令行启动器 |
-| `xsdb.sh` | Linux 启动器 |
-
----
-
-## 本板实测摘要（xcvu37p）
-
-```text
-1  xcvu37p
-   2  MicroBlaze Debug Module at USER2
-      3  MicroBlaze #0
-   4  Legacy Debug Hub
-      5  JTAG2AXI     ← jtag 1  （能读 0x116BCC00，对应 hw_axi_1）
-      6  JTAG2AXI     ← jtag 2  （另一条 master，0x116BCC00 读回 0000DEAD）
-```
+MIT. See [LICENSE](LICENSE). Not an AMD/Xilinx product; Vivado Lab must be obtained separately.
