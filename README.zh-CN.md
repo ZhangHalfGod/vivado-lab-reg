@@ -13,7 +13,7 @@
 [![GUI](https://img.shields.io/badge/GUI-Tk%20%2F%20pythonw-informational)](#windows-图形界面推荐)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-> **本仓做什么**：Windows GUI + CLI，常驻 **XSDB** 会话，按 **名字** 切换 **MicroBlaze** / **JTAG2AXI #1** / **JTAG2AXI #2**，再 `mrd` / `mwr` / 写后读回。  
+> **本仓做什么**：Windows GUI + CLI，常驻 **XSDB** 会话，**扫描** JTAG 链，从列表里选一个寄存器 target（id + 名字），再 `mrd` / `mwr` / 写后读回。  
 > **验证过**：`xcvu37p` + Vivado Lab 2022.2（`tool.tcl` 里的 smoke 基址是板相关示例，请用 [board profile](profiles/README.md) 覆盖）。  
 > **不是**：完整 Vivado/Vitis、下 bitstream、ILA，或替代 Hardware Manager。需自备 **Vivado Lab**（本仓不分发）。
 
@@ -21,11 +21,11 @@
 
 ## 日常实验流程
 
-1. **准备。** 板上电，bitstream 已含 MicroBlaze 和/或 JTAG2AXI。关掉 Hardware Manager，避免占 JTAG。Lab 的 `bin` 进 `PATH`，或设 `XSDB`。[使用前](#使用前)
-2. **GUI。** 运行 `gui.cmd`（或 `pythonw gui.py`）。连接、选路径、读写。[Windows 图形界面](#windows-图形界面推荐)
-3. **CLI 自检。** `xsdb.cmd verify`（或 `./xsdb.sh verify`）跑 MB + 两条 JTAG2AXI。[快速验证](#快速验证)
+1. **准备。** 板上电，bitstream 已加载，关掉 Hardware Manager。设置页里若还没保存路径，先选好 `xsdb.bat`。命令行也可以把 Lab 的 `bin` 放进 `PATH`，或设 `XSDB`。[使用前](#使用前)
+2. **GUI。** 运行 `gui.cmd`（或 `pythonw gui.py`）。**Connect** 扫描链路，在 **Targets** 里选一行，再读写。[Windows 图形界面](#windows-图形界面推荐)
+3. **CLI 自检。** `xsdb.cmd verify`（或 `./xsdb.sh verify`）读 MicroBlaze 的 smoke 基址，以及扫描到的每条 JTAG2AXI。[快速验证](#快速验证)
 4. **交互。** `xsdb.cmd` 后 `mb` / `jtag 1` / `smoke` / `rd` / `wr`。[命令行](#命令行)
-5. **换板。** 重新枚举 target；smoke 基址用 profile 换掉。[原理与板型适配](#原理与板型适配)
+5. **换板。** 点 **Refresh targets** 再重新选择；smoke 基址用 profile 换掉。[原理与板型适配](#原理与板型适配)
 
 更细的中文 GUI 说明：[docs/usage-zh.md](docs/usage-zh.md)。
 
@@ -53,9 +53,9 @@
                               └─ Debug Hub → JTAG2AXI       （jtag / Jtag Master）
 ```
 
-原理不绑死 VU37P：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。VU37P 只是验证过的一块板；工具按 **名字** 找 MicroBlaze / JTAG2AXI（Jtag Master），不按写死的 target 编号。
+原理不绑死 VU37P：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。GUI 按 id 和名字列出当次扫描到的寄存器 target，由你点选。VU37P 只是验证过的一块板。
 
-对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**；换板后 target 序号会变，要重新枚举，smoke 基址也要换成那块板的 Address Map（所以才要 board profile）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
+对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**。换板或换 bitstream 后点 **Refresh targets** 再选一次，smoke 基址也要换成那块板的 Address Map（所以才要 board profile）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
 
 和板型无关、真正通用的是：不装完整 Vivado/Vitis，只借 Lab 的 JTAG 会话做寄存器 peek/poke。
 
@@ -77,10 +77,14 @@ pythonw gui.py
 
 典型用法：
 
-1. 点 **连接**，内部常驻一个 XSDB 会话（不要和 Hardware Manager 同时占 JTAG）。
-2. 选路径：MicroBlaze / JTAG2AXI #1 / JTAG2AXI #2。**选路径只切换 target，不要求先填地址。**
-3. 自己填地址和数据，点 **读 / 写 / 写+读回**。
-4. 最多保留最近 100 次读写历史。
+1. **准备。** 板上电，bitstream 已加载，关掉 Hardware Manager。设置页若还没选过，先指定 `xsdb.bat`（例如 `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`），再点 **Continue**。
+2. 点 **Connect**。启动 XSDB，并**扫描** JTAG 链。
+3. **Targets** 列出这次扫到的寄存器 target（例如 MicroBlaze #0、JTAG2AXI），每行是 id 和名字，**不是写死的档位**。列表为空：确认上电并已下载 bitstream，再点 **Refresh targets**。
+4. **选中**一行。这一步只切换 XSDB target，还不需要填地址。
+5. 填地址、长度和数据，再点 **Read** / **Write** / **Write + Readback**。
+6. 换板或换 bitstream 之后，点 **Refresh targets**，再重新选择。
+
+History 最多保留最近 100 次读写。里面的 Address / Data 显示为 8 位十六进制；XSDB 自己的日志里，短地址仍可能不补前导零。
 
 需要本机 Python 3（建议 3.10）。核心逻辑与 `tool.tcl` 相同。
 
@@ -90,7 +94,7 @@ pythonw gui.py
 
 1. 板上电，bitstream 已加载，链上能看到 MicroBlaze 和/或 JTAG2AXI。
 2. 若 Vivado Hardware Manager 已连板，先关掉，释放 JTAG。
-3. 找不到 `xsdb` 时，把 Lab 的 `bin` 加进 PATH，或设用户环境变量 `XSDB`。
+3. GUI 在设置页选择 `xsdb.bat`。命令行找不到 `xsdb` 时，把 Lab 的 `bin` 加进 PATH，或设用户环境变量 `XSDB`。
 
 常见路径：
 
@@ -101,14 +105,16 @@ pythonw gui.py
 
 ## 访问路径
 
-| 路径 | 命令 | 地址依据 | 示例 smoke（VU37P 实验） |
+**Connect** 之后，**Targets** 列出当次扫描到的寄存器 target（id + 名字）。选中一行，再用属于这个 target 的地址表。MicroBlaze 和 JTAG-to-AXI 的地址空间仍然不同。
+
+| Target 类型 | 命令行 | 地址依据 | 示例 smoke（VU37P 实验） |
 | --- | --- | --- | --- |
 | MicroBlaze | `rd` / `wr` / `smoke` | **microblaze_0 / Data** Address Map | `0x11080000` |
-| Jtag Master | `jrd` / `jwr` / `jsmoke` | 该 JTAG2AXI 后面的 Address Map | `0x116BCC00` |
+| JTAG-to-AXI（Jtag Master） | `jrd` / `jwr` / `jsmoke` | 该 JTAG2AXI 后面的 Address Map | `0x116BCC00` |
 
-不要把 MB 地址用到 JTAG2AXI 上（常见 `DEC0DE1C` 译码失败）。不要把仅属于 Jtag Master 窗口的 `0x116BCxxx` 用到 MB 上。
+不要把 MB 地址用到 JTAG2AXI 上（常见 `DEC0DE1C` 译码失败）。不要把仅属于 Jtag Master 窗口的 `0x116BCxxx` 用到 MicroBlaze 上。
 
-`JTAG2AXI` 对应 Hardware Manager 里的 `hw_axi_1` / `hw_axi_2`。VU37P 实验里 target **5** / **6** 曾是 JTAG2AXI #1 / #2——编号随扫描链变，脚本按名字枚举。
+列表里的 `JTAG2AXI` 与 Hardware Manager 的 `hw_axi`（Jtag Master）是同一类。VU37P 某次扫描里出现过两条；链一变，id 就会变。GUI 里选扫描出来的那一行即可。命令行的 `jtag n` 仍表示当次扫描里的第 n 条 JTAG2AXI。
 
 Lab 只谈 JTAG/调试协议。本仓只用：`connect` / `targets` / `mrd` / `mwr`。
 
@@ -126,10 +132,10 @@ Linux：
 ./xsdb.sh verify
 ```
 
-会依次：
+这条命令行会依次：
 
 1. 选 MicroBlaze，对 MB smoke 基址做 `mrd`
-2. 选 JTAG2AXI #1、#2，对 JTAG smoke 基址做 `mrd`
+2. 对扫描到的每条 JTAG2AXI，对其 smoke 基址做 `mrd`
 
 ---
 
