@@ -20,6 +20,21 @@ Lab 负责 JTAG/调试协议。工具只发：`connect` / `targets` / `mrd` / `m
 
 ---
 
+## How it works / board support
+
+This tool does **not** hard-code VU37P. It uses **Vivado Lab XSDB → hw_server → JTAG**, then `mrd` / `mwr` on targets found on the scan chain. Targets are selected by **name** (MicroBlaze / JTAG2AXI / Jtag Master), not by fixed target numbers.
+
+**VU37P** is the board used for validation. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards, re-enumerate targets (indices change) and replace smoke base addresses with that board's Address Map (use a board profile). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
+
+### 原理与板型适配（中文）
+
+原理不绑死 VU37P：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。VU37P 只是验证过的一块板；工具按 **名字** 找 MicroBlaze / JTAG2AXI（Jtag Master），不按写死的 target 编号。
+
+对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**；换板后 target 序号会变，要重新枚举，smoke 基址也要换成那块板的 Address Map（所以才要 board profile）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
+
+和板型无关、真正通用的是：不装完整 Vivado/Vitis，只借 Lab 的 JTAG 会话做寄存器 peek/poke。
+
+
 ## Windows 图形界面（推荐）
 
 双击：
