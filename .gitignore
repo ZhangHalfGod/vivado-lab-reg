@@ -9,7 +9,9 @@ venv/
 *.log
 .DS_Store
 Thumbs.db
+# Real Address Editor exports. The only tracked sample is examples/address.xlsx.
 address_top.xlsx
+/address.xlsx
 # Lab profiles (Master Base Addresses). Track the folder markers, ignore the rest.
 profiles/private/**
 !profiles/private/.gitkeep

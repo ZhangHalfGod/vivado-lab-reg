@@ -114,6 +114,8 @@ History 最多保留最近 100 次读写。里面的 Address / Data 显示为 8 
 
 这两个值是 Vivado Address Editor 里 master 的 **Master Base Address**（该 master 看到偏移 0 的地址），不是从机自己的 Slave Base `0x0`。profile 里写成 `0x0` 表示跳过这次 smoke 读。
 
+`python addr_map.py examples/address.xlsx` 可以列出一种 Vivado 导出表里的 Master Base Address。`examples/` 里的工作簿是虚构的。别的表格是别的格式——[请使用 AI 进行适配](docs/address-map-import.md)。`--suggest-profile` 把 profile 片段打印到终端，不写文件。
+
 不要把 MB 地址用到 JTAG2AXI 上（常见 `DEC0DE1C` 译码失败）。不要把只属于 Jtag Master 窗口的地址用到 MicroBlaze 上。
 
 列表里的 `JTAG2AXI` 与 Hardware Manager 的 `hw_axi`（Jtag Master）是同一类。Virtex UltraScale+ 某次扫描里出现过两条；链一变，id 就会变。GUI 里选扫描出来的那一行即可。命令行的 `jtag n` 仍表示当次扫描里的第 n 条 JTAG2AXI。
@@ -169,6 +171,13 @@ xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 ```
 
 GUI 设置页把该路径记在 `%APPDATA%\VivadoLabReg\config.json`，Connect 时传给 XSDB 会话，因此 **Verify paths** 与命令行使用同一组地址。见 [profiles/README.md](profiles/README.md)。
+
+列出虚构的参考地址表，或打印一段 profile（抄进 `profiles/private/`；命令不会写文件）。别的表格请 [使用 AI 适配](docs/address-map-import.md)。
+
+```bat
+python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
+python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-profile
+```
 
 ---
 

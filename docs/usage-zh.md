@@ -10,7 +10,7 @@
 | 板卡 | Virtex UltraScale+ FPGA |
 | 软件 | Vivado Lab 2022.2 |
 | XSDB | `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` |
-| 地址表 | 同目录 `address_top.xlsx`（Address Editor 导出） |
+| 地址表 | 自己的 Address Editor 导出，建议命名 `address.xlsx`（见 [地址表导入](address-map-import.md)）。仓库里的 `examples/address.xlsx` 只是虚构示例 |
 
 ---
 
@@ -42,11 +42,11 @@ GUI / XSDB
            └─ JTAG2AXI       JTAG → XSDB → Jtag Master
 ```
 
-| 扫描到的 target | 对应 | 用哪套地址 | 本板例子 |
-|-----------------|------|------------|----------|
-| 名字含 MicroBlaze（如 MicroBlaze #0） | `microblaze_0` / **M_AXI_DP** | `0x110xxxxx`、`0x11Axxxxx` 等 | `11080000` = `ext_reg_if` |
-| 某一条 JTAG2AXI（本板常对应 Hardware Manager 的 `hw_axi_1`） | Jtag Master | **xdma_0 / M_AXI_LITE**，`0x116Bxxxx` | `0x116BCC00` = example Lite window register (replace with your map) |
-| 另一条 JTAG2AXI（本板常对应 `hw_axi_2`） | 另一条 Jtag Master | xlsx **没有**单独 map，需自己确认 | 同一 `116BCC00` 会读到 `0000DEAD` |
+| 扫描到的 target | 对应 | 用哪套地址 |
+|-----------------|------|------------|
+| 名字含 MicroBlaze（如 MicroBlaze #0） | MicroBlaze 的 **M_AXI_DP** | 你的 `address.xlsx` 里该 master 的 **Master Base Address** |
+| 某一条 JTAG2AXI | Jtag Master | 往往与 **xdma / M_AXI_LITE** 同一窗口；以你的表为准 |
+| 另一条 JTAG2AXI | 另一条 Jtag Master | 导出表里常常没有单独的 map，要自己确认 |
 
 在列表里选一行 **只切换 target**，成功即已选中，**还不需要地址**。  
 填地址、点 **Read** / **Write**，才是访问寄存器。
@@ -99,7 +99,7 @@ GUI / XSDB
 3. **Targets** 列出扫到的寄存器 target（例如 MicroBlaze #0、JTAG2AXI），每行是 id 和名字，**不是写死的档位**。列表为空：确认上电并已下载 bitstream，再点 **Refresh targets**。
 4. **选中**一行。这一步只切换 XSDB target，还不需要填地址。日志会出现 `Selected … (registers not read). Enter an address for Read / Write.`
 5. **自己填**，再点 **Read** / **Write** / **Write + Readback**：
-   - 地址：十六进制，可带或不带 `0x`，如 `11080000` 或 `0x116B_CC00`
+   - 地址：十六进制，可带或不带 `0x`，如 `10000000` 或 `0x2000_0000`（虚构示例；真实值来自你的 `address.xlsx`）
    - 长度：连续读几个 32-bit word，默认 `1`，**最大 256**（工具限制；一次读太多会占满历史条数）
    - 数据：写操作用，如 `00000001`
 6. 换板或换 bitstream 后，点 **Refresh targets**，再重新选一行。
@@ -115,64 +115,31 @@ GUI / XSDB
 
 ## 5. Ubuntu 开发时如何选地址
 
-打开 `address_top.xlsx`（或 Ubuntu 工程里 Address Editor）。
+打开你自己的 `address.xlsx`（或工程里的 Address Editor）。本仓的 [`addr_map.py`](../addr_map.py) 只解析一种参考列布局，示例是虚构的 [`examples/address.xlsx`](../examples/address.xlsx)。**请使用 AI 进行适配**：把 [地址表导入说明](address-map-import.md) 和你的导出一起交给 AI，让它改解析器或生成 profile。不要假设别人的表和示例一样。
+
+```bat
+python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
+python addr_map.py --xlsx D:\lab\my-design\address.xlsx --path mb
+python addr_map.py --xlsx D:\lab\my-design\address.xlsx --suggest-profile
+```
 
 ### 走 MicroBlaze（Targets 里选 MicroBlaze 那一行）
 
-用 **microblaze_0 → M_AXI_DP** 里 **未 Excluded** 的 **Master Base Address**。
-
-常用：
-
-| 基址 | 从机 |
-|------|------|
-| `0x1108_0000` | `/ext_reg_if/S00_AXI` |
-
-不要用标了 **Excluded** 的段（例如部分 `0x44A0_0000`）。那些地址 MB 到不了。
+用 **M_AXI_DP**（或父行名叫 Data）里 **未 Excluded** 的 **Master Base Address**。不要用从机自己的 Slave Base `0x0`，也不要用标了 **Excluded** 的段。
 
 ### 走 Jtag Master（Targets 里选对应的 JTAG2AXI）
 
-用 **xdma_0 → M_AXI_LITE** 的基址（PCIe Lite 窗，本板是 `0x116Bxxxx`）。本板这条通常对应 Hardware Manager 的 `hw_axi_1`，在 **Targets** 里选对应的 `JTAG2AXI` 那一行。
+用和这条 Jtag Master 同一窗口的 **M_AXI_LITE**（很多设计里是 xdma 那一路）。JTAG-to-AXI IP 通常不会作为从机出现在表里，它自己就是 Master。导出表里往往没有第二条 JTAG2AXI 的单独 map，要自己确认。
 
-JTAG-to-AXI IP **不会**作为从机出现在 xlsx 里，它是和 xdma 一样的 **Master**。和 Lite 窗共用地址的那一条，用下表。
+寄存器偏移：在 Master Base Address 上加 `+0x0 / +0x4 / +0x8 …`（按该 IP 的寄存器手册）。GUI 的「长度」是从该地址起连续几个 word。
 
-| 基址 | Range | 从机 |
-|------|-------|------|
-| `116B0000` | 4K | mb_pcie_exchange_ram / axi_bram_ctrl_0 |
-| `116B1000` | 4K | pcie_external_interface |
-| `116B2000` | 4K | audio_to_ext_memory / axi_dma_0 S_AXI_LITE |
-| `116B8000` | 1K | Generator / axi4_stream_jitter_inserted |
-| `116B8400` | 1K | anc_trouble_maker_sfp0 |
-| `116B8800` | 1K | anc_trouble_maker_sfp1 |
-| `116B8C00` | 1K | audio_trouble_maker_sfp0 |
-| `116B9000` | 1K | audio_trouble_maker_sfp1 |
-| `116B9400` | 1K | vid_st22_trouble_make_sfp1 |
-| `116B9800` | 1K | vid_st22_trouble_maker_sfp0 |
-| `116B9C00` | 1K | st2110_20 jitter_inserted |
-| `116BA000` | 1K | st2110_20 trouble_sfp1 |
-| `116BA400` | 1K | st2110_20 trouble_sfp0 |
-| `116BA800` | 1K | dummy_udp / axi4_stream_generator_0 |
-| `116BAC00` | 1K | dummy_udp / udp_ip_encap_sfp0 |
-| `116BB000` | 1K | dummy_udp / udp_ip_encap_sfp1 |
-| `116BB400` | 1K | phase_detect |
-| `116BB800` | 1K | av_delay / sdi_audio_extract_0 |
-| `116BBC00` | 1K | av_delay / audio_video_delay_0 |
-| `116BC000` | 1K | av_delay / internal_path_delay |
-| `116BC400` | 1K | audio_extract_fm_sdi_rx |
-| `116BC800` | 1K | sdi_analysis / formatted_s2mm_0 |
-| `116BCC00` | 1K | sdi_analysis / link0 |
-| `116BD000` | 1K | sdi_analysis / link1 |
-| `116BD400` | 1K | sdi_analysis / link2 |
-| `116BD800` | 1K | sdi_analysis / link3 |
-
-寄存器偏移：在基址上加 `+0x0 / +0x4 / +0x8 …`（按该 IP 的寄存器手册）。GUI 的「长度」是从该地址起连续几个 word。
-
-工程若重综合导致 Address Map 变了，以 **新的** Address Editor / 新导出的 xlsx 为准，不要死记上表。
+工程若重综合导致 Address Map 变了，以 **新的** Address Editor / 新导出的 xlsx 为准。`--suggest-profile` 只是按示例规则挑第一条，警告里会写明；选错就加 `--mb-name` / `--jtag-name`，或改生成的两行 `set`。真实 profile 放在 `profiles/private/`，不要提交。
 
 ---
 
 ## 6. 对照 Demo（GUI 应与直接 XSDB 一致）
 
-先 **Connect**，在 **Targets** 里选好 target，再填地址。下列为某次 XSDB 实测，计数器类寄存器允许轻微变化。
+先 **Connect**，在 **Targets** 里选好 target，再填地址。下列为某次 XSDB 实测，计数器类寄存器允许轻微变化。这些数字只是那次会话的对照，不是可复用的地址表；选地址用上一节和虚构示例 `examples/address.xlsx`。
 
 **Demo 1** Targets 里选 MicroBlaze（如 MicroBlaze #0），地址 `11080000`，长度 `8`
 
@@ -211,7 +178,7 @@ D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat .\demo.tcl
 |------|------|
 | 稳定、符合 IP 手册 | 选中的 target 和地址都对 |
 | `DEC0DE1C` | 当前 Master 的总线上 **没有这个地址**（选错 target，或地址不在这条总线上） |
-| `0000DEAD` | 本板另一条 JTAG2AXI（对应 `hw_axi_2`）在 `116BCC00` 上的表现；不要当成 link0 状态 |
+| `0000DEAD` | 某次对照里，另一条 JTAG2AXI 的读回。不要把它当成目标从机的状态 |
 | 写显示成功但读回不变 | 只读寄存器，或写没落到从机（再核对选中的 target） |
 | 连接失败 / 超时 | 板未上电、未下载 bit、或 Hardware Manager 占着 JTAG |
 
@@ -259,7 +226,7 @@ Windows 命令行：`xsdb.cmd` 参数相同。
 | `tool.tcl` | 真正的 `mrd`/`mwr` 逻辑 |
 | `xsdb.cmd` / `xsdb.sh` | Windows / Linux 命令行 |
 | `demo.tcl` | 与 GUI 对照的 XSDB 基准 |
-| `address_top.xlsx` | Address Map 导出 |
+| `examples/address.xlsx` | 虚构的 Address Map 示例（参考列）。真实导出不要提交 |
 | `reg.tcl` | `verify` 批处理 |
 
 ---
