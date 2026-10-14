@@ -24,7 +24,8 @@ Windows：bitstream 下到 FPGA → 打开本 GUI → Connect 扫描 → 在 Tar
 
 - **不要**指望在 Ubuntu 上开这个窗口。`gui.py` 调的是 Windows 的 `xsdb.bat` + JTAG 线。
 - Ubuntu 上如果也装了 Vivado Lab / Vitis，可以用同目录 `xsdb.sh` 做命令行读写，和 GUI 一样走 `tool.tcl`。
-- 新 IP 的地址以工程 **Address Editor** 为准，不要沿用过期的 `0x44A00000` 一类示例。
+- 新 IP 的地址以工程 **Address Editor** 为准，不要沿用过期示例。
+- `smoke` / `verify` 的基址不写在工具里。复制 `profiles/example.tcl` 到 `profiles/private/`，填入 Address Editor 的 **Master Base Address**（不是从机 Slave Base `0x0`），再执行 `xsdb.cmd verify --profile <文件>`。地址为 `0x0` 时该路径的读会跳过。下面各节里的手工读写例子不是工具默认值。
 
 ---
 
@@ -225,11 +226,13 @@ D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat .\demo.tcl
 ```bash
 cd /path/to/vivado_lab
 ./xsdb.sh                # 交互，然后 mb / jtag 1 / rd / wr
-./xsdb.sh verify
-./xsdb.sh rd  11080000 8
-./xsdb.sh jrd 116BCC00 4
-./xsdb.sh jwr 116BCC08 1
+./xsdb.sh verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
+./xsdb.sh rd  00001000 8
+./xsdb.sh jrd 00002000 4
+./xsdb.sh jwr 00002008 1
 ```
+
+不带 `--profile` 时，也可以先 `export VIVADO_LAB_REG_PROFILE=/lab/vivado-lab-reg/profiles/private/board.tcl`（`XSDB_PROFILE` 同样有效）。profile 未设置或地址为 `0x0` 时，`verify` 仍扫描 JTAG，但跳过对应的 smoke 读。
 
 Windows 命令行：`xsdb.cmd` 参数相同。
 

@@ -1,5 +1,7 @@
 # Direct XSDB baseline for GUI comparison.
 #   D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat demo.tcl
+# The addresses below are explicit reads for this script, not smoke defaults.
+# smoke / verify use a board profile (see profiles/README.md).
 set ::XSDB_QUIET 1
 source [file join [file dirname [file normalize [info script]]] tool.tcl]
 if {[xconnect]} { exit 1 }

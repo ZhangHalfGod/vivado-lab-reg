@@ -11,15 +11,162 @@
 #   gui_connect / enum_targets  ->  TGT <id> <name>
 #   select_id <id>              ->  targets <id>, then rd / wr / wrd
 
-# EXAMPLE board defaults — override before source, or use profiles/
-if {![info exists ::MB_SMOKE_ADDR]}   { set ::MB_SMOKE_ADDR   0x11080000 }
-if {![info exists ::JTAG_SMOKE_ADDR]} { set ::JTAG_SMOKE_ADDR 0x116BCC00 }
-if {![info exists ::PATH]}            { set ::PATH "" }
-if {![info exists ::JTAG_N]}          { set ::JTAG_N 0 }
+# Smoke addresses come from a board profile (Master Base Address).
+#   xsdb.cmd verify --profile <file.tcl>
+#   set VIVADO_LAB_REG_PROFILE / set XSDB_PROFILE
+# Unset or 0x0 skips that mrd. No lab address is built in.
+if {![info exists ::PATH]}   { set ::PATH "" }
+if {![info exists ::JTAG_N]} { set ::JTAG_N 0 }
+set ::TOOL_TCL_DIR [file dirname [file normalize [info script]]]
 
 proc _ax {a} {
+    set a [string trim $a]
     set a [string map {_ "" 0x "" 0X ""} $a]
     return [format 0x%08X [expr 0x$a]]
+}
+
+proc _smoke_addr_kind {addr} {
+    set t [string trim $addr]
+    if {$t eq ""} {
+        return zero
+    }
+    if {[catch {set norm [_ax $t]}]} {
+        return bad
+    }
+    if {$norm eq "0x00000000"} {
+        return zero
+    }
+    return ok
+}
+
+proc _resolve_profile_path {path} {
+    set path [string trim $path]
+    if {$path eq ""} {
+        return ""
+    }
+    if {[file isfile $path]} {
+        return [file normalize $path]
+    }
+    if {[info exists ::TOOL_TCL_DIR] && $::TOOL_TCL_DIR ne ""} {
+        set candidate [file join $::TOOL_TCL_DIR $path]
+        if {[file isfile $candidate]} {
+            return [file normalize $candidate]
+        }
+    }
+    set candidate [file join [pwd] $path]
+    if {[file isfile $candidate]} {
+        return [file normalize $candidate]
+    }
+    return ""
+}
+
+proc _requested_profile_path {} {
+    if {[info exists ::VIVADO_LAB_REG_PROFILE]} {
+        set p [string trim $::VIVADO_LAB_REG_PROFILE]
+        if {$p ne ""} {
+            return $p
+        }
+    }
+    foreach name {VIVADO_LAB_REG_PROFILE XSDB_PROFILE} {
+        if {[info exists ::env($name)]} {
+            set p [string trim $::env($name)]
+            if {$p ne ""} {
+                return $p
+            }
+        }
+    }
+    return ""
+}
+
+proc _apply_smoke_defaults {} {
+    if {![info exists ::MB_SMOKE_ADDR] || [string trim $::MB_SMOKE_ADDR] eq ""} {
+        set ::MB_SMOKE_ADDR 0x0
+    }
+    if {![info exists ::JTAG_SMOKE_ADDR] || [string trim $::JTAG_SMOKE_ADDR] eq ""} {
+        set ::JTAG_SMOKE_ADDR 0x0
+    }
+}
+
+proc _announce_profile {} {
+    if {[info exists ::PROFILE_LOAD_ERROR] && $::PROFILE_LOAD_ERROR} {
+        puts "board profile: NOT LOADED"
+    } elseif {[info exists ::LOADED_PROFILE]} {
+        puts "board profile: $::PROFILE_NAME ($::LOADED_PROFILE)"
+    } else {
+        puts "board profile: (none)"
+    }
+    puts "MB_SMOKE_ADDR=$::MB_SMOKE_ADDR JTAG_SMOKE_ADDR=$::JTAG_SMOKE_ADDR"
+    foreach {var label} {::MB_SMOKE_ADDR MB_SMOKE_ADDR ::JTAG_SMOKE_ADDR JTAG_SMOKE_ADDR} {
+        set kind [_smoke_addr_kind [set $var]]
+        if {$kind eq "bad"} {
+            puts "ERROR: $label is not a hex Master Base Address: [set $var]"
+            set ::PROFILE_LOAD_ERROR 1
+        }
+    }
+    set mb_kind [_smoke_addr_kind $::MB_SMOKE_ADDR]
+    set jtag_kind [_smoke_addr_kind $::JTAG_SMOKE_ADDR]
+    if {$mb_kind eq "zero" || $jtag_kind eq "zero"} {
+        puts "smoke/verify skips a path whose Master Base Address is 0x0."
+    }
+}
+
+# Source a profile Tcl file (global scope) and fill any address still unset with 0x0.
+# Returns 0 on success or when no profile was requested, 1 when the file is missing,
+# fails to source, or sets a non-hex address.
+proc load_board_profile {{path ""}} {
+    if {[info exists ::_LOADING_PROFILE] && $::_LOADING_PROFILE} {
+        return 0
+    }
+    set ::_LOADING_PROFILE 1
+    set ::PROFILE_LOAD_ERROR 0
+    unset -nocomplain ::LOADED_PROFILE
+    set rc 0
+    if {$path eq ""} {
+        set path [_requested_profile_path]
+    }
+    if {$path eq ""} {
+        _apply_smoke_defaults
+        _announce_profile
+        set ::_LOADING_PROFILE 0
+        return 0
+    }
+    set resolved [_resolve_profile_path $path]
+    if {$resolved eq ""} {
+        puts "ERROR: board profile not found: $path"
+        set ::PROFILE_LOAD_ERROR 1
+        unset -nocomplain ::MB_SMOKE_ADDR ::JTAG_SMOKE_ADDR ::PROFILE_NAME
+        _apply_smoke_defaults
+        _announce_profile
+        set ::_LOADING_PROFILE 0
+        return 1
+    }
+    unset -nocomplain ::MB_SMOKE_ADDR ::JTAG_SMOKE_ADDR ::PROFILE_NAME
+    if {[catch {uplevel #0 [list source $resolved]} err]} {
+        puts "ERROR: board profile failed: $resolved"
+        puts "ERROR: $err"
+        set ::PROFILE_LOAD_ERROR 1
+        unset -nocomplain ::MB_SMOKE_ADDR ::JTAG_SMOKE_ADDR ::PROFILE_NAME ::LOADED_PROFILE
+        set rc 1
+    } else {
+        set ::LOADED_PROFILE $resolved
+        if {![info exists ::PROFILE_NAME] || [string trim $::PROFILE_NAME] eq ""} {
+            set ::PROFILE_NAME [file rootname [file tail $resolved]]
+        }
+    }
+    _apply_smoke_defaults
+    _announce_profile
+    set ::_LOADING_PROFILE 0
+    if {$::PROFILE_LOAD_ERROR} {
+        return 1
+    }
+    return $rc
+}
+
+proc _skip_smoke_msg {which var} {
+    puts "SKIP $which mrd: $var is 0x0 or unset, so this read is not issued."
+    puts "  Set the Master Base Address from Vivado Address Editor (not Slave Base 0x0)."
+    puts "  Example: xsdb.cmd verify --profile D:/lab/vivado-lab-reg/profiles/private/board.tcl"
+    puts "  or set VIVADO_LAB_REG_PROFILE (XSDB_PROFILE is also read)."
 }
 
 proc _clean_target_name {nm} {
@@ -290,15 +437,42 @@ proc wrd {addr data} {
 }
 
 proc smoke {} {
-    puts "===== MB  mrd $::MB_SMOKE_ADDR 10 ====="
+    set addr $::MB_SMOKE_ADDR
+    set kind [_smoke_addr_kind $addr]
+    puts "===== MB smoke ====="
+    if {$kind eq "bad"} {
+        puts "ERROR: MB_SMOKE_ADDR is not a hex Master Base Address: $addr"
+        return 1
+    }
     if {[mb]} { return 1 }
-    puts [mrd $::MB_SMOKE_ADDR 10]
+    if {$kind eq "zero"} {
+        _skip_smoke_msg "MicroBlaze" MB_SMOKE_ADDR
+        return 0
+    }
+    set norm [_ax [string trim $addr]]
+    puts "mrd $norm 10"
+    puts [mrd $norm 10]
+    return 0
 }
 
 proc jsmoke {{n 1}} {
-    puts "===== JTAG2AXI #$n  mrd $::JTAG_SMOKE_ADDR 4 ====="
+    set addr $::JTAG_SMOKE_ADDR
+    set kind [_smoke_addr_kind $addr]
+    set ids [_j2a_ids]
+    puts "===== JTAG2AXI #$n smoke ids=$ids ====="
+    if {$kind eq "bad"} {
+        puts "ERROR: JTAG_SMOKE_ADDR is not a hex Master Base Address: $addr"
+        return 1
+    }
     if {[jtag $n]} { return 1 }
-    puts [mrd $::JTAG_SMOKE_ADDR 4]
+    if {$kind eq "zero"} {
+        _skip_smoke_msg "JTAG2AXI #$n" JTAG_SMOKE_ADDR
+        return 0
+    }
+    set norm [_ax [string trim $addr]]
+    puts "mrd $norm 4"
+    puts [mrd $norm 4]
+    return 0
 }
 
 proc verify_all {} {
@@ -325,12 +499,16 @@ proc help_xsdb {} {
     puts "  rd <addr> \[len\]       read current target"
     puts "  wr <addr> <data>      write current target"
     puts "  wrd <addr> <data>     write then read back"
-    puts "  smoke                 MB: mrd 0x11080000 10"
-    puts "  jsmoke \[n\]            JTAG2AXI: mrd 0x116BCC00 4"
-    puts "  verify_all            smoke both paths"
+    puts "  smoke                 MB: mrd MB_SMOKE_ADDR 10 (skip if 0x0)"
+    puts "  jsmoke \[n\]            JTAG2AXI: mrd JTAG_SMOKE_ADDR 4 (skip if 0x0)"
+    puts "  verify_all            smoke both paths (addresses from the board profile)"
+    puts "  load_board_profile \[f\]  source a profile Tcl (or the env path)"
+    puts "  MB_SMOKE_ADDR=$::MB_SMOKE_ADDR  JTAG_SMOKE_ADDR=$::JTAG_SMOKE_ADDR"
     puts "  targets               list JTAG targets"
     puts "  help_xsdb             this help"
 }
+
+load_board_profile
 
 if {![info exists ::XSDB_QUIET]} {
     xconnect

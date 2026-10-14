@@ -10,4 +10,7 @@ venv/
 .DS_Store
 Thumbs.db
 address_top.xlsx
-profiles/private/
+# Lab profiles (Master Base Addresses). Track the folder markers, ignore the rest.
+profiles/private/**
+!profiles/private/.gitkeep
+!profiles/private/README.md

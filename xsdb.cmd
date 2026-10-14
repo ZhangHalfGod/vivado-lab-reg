@@ -14,6 +14,22 @@ set "HERE=%~dp0"
 set "HERE=%HERE:\=/%"
 if "%HERE:~-1%"=="/" set "HERE=%HERE:~0,-1%"
 
+REM --profile <file.tcl> before the command:
+REM   xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+REM   xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl verify
+if /i "%~1"=="--profile" goto LEADING_PROFILE
+goto AFTER_LEADING_PROFILE
+:LEADING_PROFILE
+if "%~2"=="" (
+    echo ERROR: --profile needs a .tcl board profile.
+    echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+    exit /b 1
+)
+set "VIVADO_LAB_REG_PROFILE=%~2"
+shift
+shift
+:AFTER_LEADING_PROFILE
+
 if "%~1"=="" goto INTERACTIVE
 if /i "%~1"=="help" goto USAGE
 if /i "%~1"=="-h" goto USAGE
@@ -46,6 +62,8 @@ echo.
 echo  Usage:
 echo    xsdb.cmd                 interactive
 echo    xsdb.cmd verify          both paths then exit
+echo    xsdb.cmd verify --profile ^<file.tcl^>
+echo    xsdb.cmd --profile ^<file.tcl^> [command]
 echo    xsdb.cmd targets         list JTAG targets
 echo    xsdb.cmd rd   ^<addr^> [len]
 echo    xsdb.cmd wr   ^<addr^> ^<data^>
@@ -56,10 +74,16 @@ echo    xsdb.cmd jwr  ^<addr^> ^<data^>
 echo    xsdb.cmd jwr2 ^<addr^> ^<data^>
 echo    xsdb.cmd jwrd ^<addr^> ^<data^>
 echo.
+echo  Board profile ^(Master Base Address^), optional:
+echo    --profile ^<file.tcl^>   source before tool.tcl
+echo    or set VIVADO_LAB_REG_PROFILE ^(XSDB_PROFILE also works^)
+echo    0x0 or no profile skips that smoke read.
+echo.
 echo  Examples:
-echo    xsdb.cmd rd   11080000 10
-echo    xsdb.cmd jrd  116BCC00 4
-echo    xsdb.cmd jwr  116BCC08 1
+echo    xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+echo    xsdb.cmd rd   00001000 10
+echo    xsdb.cmd jrd  00002000 4
+echo    xsdb.cmd jwr  00002008 1
 echo.
 if "%~1"=="" exit /b 0
 if /i "%~1"=="help" exit /b 0
@@ -67,17 +91,55 @@ pause
 exit /b 1
 
 :INTERACTIVE
+if /i "%~2"=="--profile" goto INTERACTIVE_PROFILE
+if not "%~2"=="" (
+    echo Unknown argument: %~2
+    echo Usage: xsdb.cmd [--profile file.tcl]
+    exit /b 1
+)
+goto INTERACTIVE_RUN
+:INTERACTIVE_PROFILE
+if "%~3"=="" (
+    echo ERROR: --profile needs a .tcl board profile.
+    echo Example: xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+    exit /b 1
+)
+set "VIVADO_LAB_REG_PROFILE=%~3"
+:INTERACTIVE_RUN
 echo.
 echo  XSDB: JTAG -^> MicroBlaze  and  JTAG -^> Jtag Master
 echo  script: %~dp0tool.tcl
 echo  xsdb : %XSDB%
+if defined VIVADO_LAB_REG_PROFILE echo  profile: "%VIVADO_LAB_REG_PROFILE%"
 echo.
 "%XSDB%" -interactive -eval "source {%HERE%/tool.tcl}"
 if errorlevel 1 pause
 exit /b %ERRORLEVEL%
 
 :VERIFY
+if /i "%~2"=="--profile" goto VERIFY_PROFILE
+if not "%~2"=="" (
+    echo Unknown argument: %~2
+    echo Usage: xsdb.cmd verify [--profile file.tcl]
+    echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+    exit /b 1
+)
+goto VERIFY_RUN
+:VERIFY_PROFILE
+if "%~3"=="" (
+    echo ERROR: --profile needs a .tcl board profile.
+    echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+    exit /b 1
+)
+if not "%~4"=="" (
+    echo Unknown argument: %~4
+    echo Usage: xsdb.cmd verify [--profile file.tcl]
+    exit /b 1
+)
+set "VIVADO_LAB_REG_PROFILE=%~3"
+:VERIFY_RUN
 echo verify both paths: %~dp0reg.tcl
+if defined VIVADO_LAB_REG_PROFILE echo board profile: "%VIVADO_LAB_REG_PROFILE%"
 "%XSDB%" "%~dp0reg.tcl"
 if errorlevel 1 pause
 exit /b %ERRORLEVEL%
@@ -89,7 +151,7 @@ exit /b %ERRORLEVEL%
 
 :RD
 if "%~2"=="" (
-    echo Missing addr. Example: xsdb.cmd rd 11080000 10
+    echo Missing addr. Example: xsdb.cmd rd 00001000 10
     exit /b 1
 )
 set "LEN=%~3"
@@ -100,7 +162,7 @@ exit /b %ERRORLEVEL%
 
 :WR
 if "%~3"=="" (
-    echo Missing args. Example: xsdb.cmd wr 11080000 12345678
+    echo Missing args. Example: xsdb.cmd wr 00001000 12345678
     exit /b 1
 )
 "%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {wr %~2 %~3}; exit"
@@ -109,7 +171,7 @@ exit /b %ERRORLEVEL%
 
 :WRD
 if "%~3"=="" (
-    echo Missing args. Example: xsdb.cmd wrd 11080000 1
+    echo Missing args. Example: xsdb.cmd wrd 00001000 1
     exit /b 1
 )
 "%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {wrd %~2 %~3}; exit"
@@ -118,7 +180,7 @@ exit /b %ERRORLEVEL%
 
 :JRD
 if "%~2"=="" (
-    echo Missing addr. Example: xsdb.cmd jrd 116BCC00 4
+    echo Missing addr. Example: xsdb.cmd jrd 00002000 4
     exit /b 1
 )
 set "LEN=%~3"
@@ -129,7 +191,7 @@ exit /b %ERRORLEVEL%
 
 :JRD2
 if "%~2"=="" (
-    echo Missing addr. Example: xsdb.cmd jrd2 116BCC00 4
+    echo Missing addr. Example: xsdb.cmd jrd2 00002000 4
     exit /b 1
 )
 set "LEN=%~3"
@@ -140,7 +202,7 @@ exit /b %ERRORLEVEL%
 
 :JWR
 if "%~3"=="" (
-    echo Missing args. Example: xsdb.cmd jwr 116BCC08 1
+    echo Missing args. Example: xsdb.cmd jwr 00002008 1
     exit /b 1
 )
 "%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {wr %~2 %~3}; exit"
@@ -149,7 +211,7 @@ exit /b %ERRORLEVEL%
 
 :JWR2
 if "%~3"=="" (
-    echo Missing args. Example: xsdb.cmd jwr2 116BCC08 1
+    echo Missing args. Example: xsdb.cmd jwr2 00002008 1
     exit /b 1
 )
 "%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {wr %~2 %~3}; exit"
@@ -158,7 +220,7 @@ exit /b %ERRORLEVEL%
 
 :JWRD
 if "%~3"=="" (
-    echo Missing args. Example: xsdb.cmd jwrd 116BCC08 1
+    echo Missing args. Example: xsdb.cmd jwrd 00002008 1
     exit /b 1
 )
 "%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {wrd %~2 %~3}; exit"
@@ -167,7 +229,7 @@ exit /b %ERRORLEVEL%
 
 :JWRD2
 if "%~3"=="" (
-    echo Missing args. Example: xsdb.cmd jwrd2 116BCC08 1
+    echo Missing args. Example: xsdb.cmd jwrd2 00002008 1
     exit /b 1
 )
 "%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {wrd %~2 %~3}; exit"
