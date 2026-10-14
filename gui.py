@@ -42,6 +42,8 @@ HEX_RE = re.compile(r"^(?:0x)?[0-9A-Fa-f_]+$", re.I)
 MRD_RE = re.compile(r"^\s*([0-9A-Fa-f]+):\s+([0-9A-Fa-f]+)\s*$", re.I)
 TGT_RE = re.compile(r"^TGT\s+(\d+)\s+(.+)$")
 HISTORY_MAX = 100
+# History Address/Data columns: 32-bit hex, same width as 110B0000.
+HIST_HEX_WIDTH = 8
 APP_NAME = "VivadoLabReg"
 # Windows file dialog label for This PC
 THIS_PC = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"
@@ -138,6 +140,21 @@ def norm_hex(token: str, name: str) -> str:
     if not raw:
         raise ValueError(f"{name} is empty")
     return raw
+
+
+def fmt_hist_hex(token: str) -> str:
+    """Uppercase hex for History (and fields filled from a row), zero-padded to 8 digits.
+
+    Display only. rd/wr/wrd still send the norm_hex() token, so a short address
+    such as 1000 stays 1000 on the wire and shows as 00001000 in the table.
+    Values longer than 8 digits are kept.
+    """
+    raw = (token or "").strip().replace("_", "")
+    if raw.lower().startswith("0x"):
+        raw = raw[2:]
+    if not raw:
+        return ""
+    return raw.upper().zfill(HIST_HEX_WIDTH)
 
 
 class XsdbSession:
@@ -623,7 +640,8 @@ class App(tk.Tk):
         self._record_hist(out, None)
 
     def _push_hist(self, op: str, addr: str, data: str) -> None:
-        self.tree.insert("", 0, values=(op, addr, data))
+        # Both mrd parses and Write / Write+Readback hist tuples land here.
+        self.tree.insert("", 0, values=(op, fmt_hist_hex(addr), fmt_hist_hex(data)))
         extra = len(self.tree.get_children()) - HISTORY_MAX
         if extra > 0:
             for item in self.tree.get_children()[-extra:]:
@@ -648,11 +666,11 @@ class App(tk.Tk):
             return
         vals = self.tree.item(sel[0], "values")
         if len(vals) >= 3:
-            self.addr_var.set(vals[1])
-            self.data_var.set(vals[2])
+            self.addr_var.set(fmt_hist_hex(vals[1]))
+            self.data_var.set(fmt_hist_hex(vals[2]))
         elif len(vals) >= 2:
-            self.addr_var.set(vals[0])
-            self.data_var.set(vals[1])
+            self.addr_var.set(fmt_hist_hex(vals[0]))
+            self.data_var.set(fmt_hist_hex(vals[1]))
 
     def _highlight_target(self, tid: str | None) -> None:
         self._filling_targets = True
