@@ -97,6 +97,18 @@ With no name filter the snippet uses an **example rule**: the first MicroBlaze `
 
 `--path` only filters a listing. The snippet still fills both `::MB_SMOKE_ADDR` and `::JTAG_SMOKE_ADDR`.
 
+### Windows GUI
+
+`gui.cmd` (or `pythonw gui.py`) shows **Address map (optional)** on the setup page and on the main window. Browse for a workbook — the usual file name is `address.xlsx`. That path is stored in `%APPDATA%\VivadoLabReg\config.json` with the `xsdb.bat` and board-profile paths.
+
+**Load / Import map** lists Master Base Address rows. **Show** is All, MicroBlaze path, or JTAG-Lite path, using the same split as `for_path`. Select a row to copy that Master Base into the address field.
+
+**Suggest profile** shows the same Tcl as `--suggest-profile`. **Write private profile** asks where to save. The dialog starts at `profiles/private/lab.tcl` and does not replace an existing file unless you confirm. Rows you select are the name filters. With nothing selected, the snippet uses the CLI first-match rule and shows the same warning.
+
+This GUI uses the **reference** Vivado layout described above. Other formats: **use AI to adapt**.
+
+Reading `.xlsx` needs `openpyxl` (`pip install openpyxl`). If it is missing, the window says so instead of showing an empty map.
+
 ### What to hand an AI
 
 1. This file.
@@ -201,6 +213,18 @@ python addr_map.py --xlsx examples/address.xlsx --suggest-profile --mb-name exam
 不写名字过滤时，用的是一条**示例规则**：第一条 MicroBlaze `M_AXI_DP` 从机，以及第一条 xdma `M_AXI_LITE` 从机。警告里会写出选中了哪一行、还跳过了几条。这不是实验室约定。选错了就加上名字过滤，或改那两行 `set`。写成 `0x0` 时，smoke / verify 会跳过这一次读。
 
 `--path` 只过滤列表。片段里仍然会同时填 `::MB_SMOKE_ADDR` 和 `::JTAG_SMOKE_ADDR`。
+
+### Windows 图形界面
+
+`gui.cmd`（或 `pythonw gui.py`）的设置页和主窗口都有 **Address map (optional)**。浏览工作簿，文件名建议 `address.xlsx`。该路径和 `xsdb.bat`、board profile 一起记在 `%APPDATA%\VivadoLabReg\config.json`。
+
+**Load / Import map** 列出 Master Base Address。**Show** 可选 All、MicroBlaze path、JTAG-Lite path，划分方式和 `for_path` 相同。选中一行，会把该 Master Base 填进地址框。
+
+**Suggest profile** 显示和 `--suggest-profile` 相同的 Tcl。**Write private profile** 让你选择保存位置，对话框从 `profiles/private/lab.tcl` 开始。已有文件不会直接覆盖，需确认后才替换。选中的行作为名字过滤。没有选中时，片段使用命令行的“第一条”规则，并给出同样的警告。
+
+这个 GUI 使用的是上面描述的 **reference** Vivado 布局。别的格式：**请使用 AI 进行适配**。
+
+读 `.xlsx` 需要 `openpyxl`（`pip install openpyxl`）。没安装时，窗口会说明原因，而不是给出一张空表。
 
 ### 交给 AI 的材料
 

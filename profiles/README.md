@@ -61,6 +61,8 @@ python addr_map.py --xlsx examples/address.xlsx --suggest-profile --mb-name exam
 
 `--suggest-profile` prints Tcl on the terminal. Copy it into `profiles/private/`. The command does not write that directory and does not commit anything. `examples/address.xlsx` is fictional (`/example_ip_a` at `0x1000_0000`, `/example_ip_b` at `0x2000_0000`).
 
+The Windows GUI can write the same snippet. **Write private profile** starts at `profiles/private/lab.tcl` and does not replace an existing file unless you confirm. That window uses this **reference** layout. Other formats: **use AI to adapt** ([import note](../docs/address-map-import.md)).
+
 ## 中文
 
 `smoke` 和 `verify` 只用两个 **Master Base Address**：
@@ -108,3 +110,5 @@ python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-
 ```
 
 `--suggest-profile` 把 Tcl 打印到终端。抄进 `profiles/private/`。命令不会写这个目录，也不会提交。`examples/address.xlsx` 是虚构的（`/example_ip_a` 为 `0x1000_0000`，`/example_ip_b` 为 `0x2000_0000`）。
+
+Windows GUI 的 **Write private profile** 可以写入同一段 Tcl。保存对话框从 `profiles/private/lab.tcl` 开始，已有文件需确认才替换。该窗口使用这份 **reference** 布局。别的格式：**请使用 AI 进行适配**（[导入说明](../docs/address-map-import.md)）。
