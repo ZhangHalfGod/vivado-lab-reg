@@ -7,12 +7,13 @@ import json
 import os
 import queue
 import re
+import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from subprocess import PIPE, STDOUT, STARTF_USESHOWWINDOW, STARTUPINFO, Popen, SW_HIDE
+from subprocess import PIPE, STDOUT, Popen
 from tkinter import filedialog, messagebox, ttk
 
 def app_dir() -> Path:
@@ -108,27 +109,95 @@ def config_file() -> Path:
     return Path(base) / APP_NAME / "config.json"
 
 
-def load_saved_xsdb() -> str:
+def load_config() -> dict:
     cfg = config_file()
     if not cfg.is_file():
-        return ""
+        return {}
     try:
         data = json.loads(cfg.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return ""
+        return {}
     if not isinstance(data, dict):
-        return ""
-    return str(data.get("xsdb_bat") or "").strip()
+        return {}
+    return data
+
+
+def save_config(updates: dict) -> None:
+    cfg = config_file()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    data = load_config()
+    data.update(updates)
+    cfg.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def load_saved_xsdb() -> str:
+    return str(load_config().get("xsdb_bat") or "").strip()
+
+
+def initial_profile_text() -> str:
+    """Profile path for the setup field.
+
+    A saved ``profile`` key, including an empty string, wins. The environment
+    is only a hint the first time the key is absent.
+    """
+    data = load_config()
+    if "profile" in data:
+        return str(data.get("profile") or "").strip()
+    return (
+        os.environ.get("VIVADO_LAB_REG_PROFILE")
+        or os.environ.get("XSDB_PROFILE")
+        or ""
+    ).strip()
 
 
 def save_xsdb_path(xsdb: Path) -> None:
-    cfg = config_file()
-    cfg.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"xsdb_bat": str(xsdb)}
-    cfg.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    save_config({"xsdb_bat": str(xsdb)})
+
+
+def validate_profile(raw: str) -> tuple[Path | None, str | None]:
+    """Return ``(path, error)``. Empty input is ``(None, None)`` so smoke stays 0x0."""
+    text = (raw or "").strip().strip('"')
+    if not text:
+        return None, None
+    path = Path(text)
+    if not path.is_file():
+        return None, f"Board profile not found:\n{text}"
+    if path.suffix.lower() != ".tcl":
+        return None, "Board profile must be a .tcl file."
+    return path.resolve(), None
+
+
+def session_environ(profile: Path | None) -> dict[str, str]:
+    """Environment for an XSDB child. The chosen profile replaces inherited vars."""
+    env = os.environ.copy()
+    if profile is not None:
+        env["VIVADO_LAB_REG_PROFILE"] = str(profile)
+    else:
+        env.pop("VIVADO_LAB_REG_PROFILE", None)
+        env.pop("XSDB_PROFILE", None)
+    return env
+
+
+def profile_browse_dir() -> str:
+    private = HERE / "profiles" / "private"
+    if private.is_dir():
+        return str(private)
+    profiles = HERE / "profiles"
+    if profiles.is_dir():
+        return str(profiles)
+    return str(HERE)
+
+
+def _hidden_startupinfo():
+    if os.name != "nt":
+        return None
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = subprocess.SW_HIDE
+    return si
 
 
 def norm_hex(token: str, name: str) -> str:
@@ -158,9 +227,10 @@ def fmt_hist_hex(token: str) -> str:
 
 
 class XsdbSession:
-    def __init__(self, xsdb: Path, script: Path) -> None:
+    def __init__(self, xsdb: Path, script: Path, profile: Path | None = None) -> None:
         self.xsdb = xsdb
         self.script = script
+        self.profile = profile
         self.proc: Popen[str] | None = None
         self._q: queue.Queue[str] = queue.Queue()
         self._reader: threading.Thread | None = None
@@ -171,9 +241,6 @@ class XsdbSession:
 
     def start(self, timeout: float = 20.0) -> str:
         self.close()
-        si = STARTUPINFO()
-        si.dwFlags |= STARTF_USESHOWWINDOW
-        si.wShowWindow = SW_HIDE
         self.proc = Popen(
             [str(self.xsdb), str(self.script)],
             stdin=PIPE,
@@ -184,7 +251,8 @@ class XsdbSession:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
-            startupinfo=si,
+            env=session_environ(self.profile),
+            startupinfo=_hidden_startupinfo(),
         )
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
@@ -263,10 +331,11 @@ class XsdbSession:
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Vivado Lab Reg — Select xsdb.bat")
-        self.geometry("720x360")
-        self.minsize(640, 300)
+        self.title("Vivado Lab Reg — Setup")
+        self.geometry("760x520")
+        self.minsize(680, 460)
         self.xsdb_path: Path | None = None
+        self.profile_path: Path | None = None
         self.session: XsdbSession | None = None
         self.connected = False
         self.busy = False
@@ -281,15 +350,20 @@ class App(tk.Tk):
         self.data_var = tk.StringVar(value="00000001")
         self.status_var = tk.StringVar(value="Disconnected")
         self.xsdb_var = tk.StringVar(value="")
+        self.profile_var = tk.StringVar(value="(none)")
         self.setup_path_var = tk.StringVar(value="")
+        self.setup_profile_var = tk.StringVar(value="")
         self.setup_msg_var = tk.StringVar(
-            value="Choose xsdb.bat from Vivado Lab. Continue opens the main window."
+            value="Choose xsdb.bat from Vivado Lab. A board profile is optional. Continue opens the main window."
         )
         self.target_msg = tk.StringVar(value="Connect to scan targets on the JTAG chain.")
         saved = load_saved_xsdb()
+        saved_profile = initial_profile_text()
         if saved:
             self.setup_path_var.set(saved)
             self.setup_msg_var.set("Loaded last saved path. Click Continue when ready.")
+        if saved_profile:
+            self.setup_profile_var.set(saved_profile)
         self.setup_frame = ttk.Frame(self)
         self.main_frame = ttk.Frame(self)
         self._build_setup()
@@ -326,7 +400,26 @@ class App(tk.Tk):
         )
         ttk.Button(row, text="Browse…", command=self._browse_xsdb).pack(side="left")
 
-        ttk.Label(box, textvariable=self.setup_msg_var, wraplength=640, foreground="#555555").pack(
+        prof = ttk.LabelFrame(outer, text="Board profile (optional)", padding=12)
+        prof.pack(fill="x", pady=(16, 0))
+        ttk.Label(
+            prof,
+            text="Tcl file of Master Base Addresses for smoke / verify "
+                 "(Vivado Address Editor, not Slave Base 0x0).\n"
+                 "Leave empty to keep those addresses at 0x0 so those reads are skipped.\n"
+                 r"Copy profiles\example.tcl to profiles\private\ and edit it.",
+            justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+        prow = ttk.Frame(prof)
+        prow.pack(fill="x")
+        ttk.Label(prow, text="Profile", width=8).pack(side="left")
+        ttk.Entry(prow, textvariable=self.setup_profile_var).pack(
+            side="left", fill="x", expand=True, padx=(0, 8)
+        )
+        ttk.Button(prow, text="Browse…", command=self._browse_profile).pack(side="left")
+        ttk.Button(prow, text="Clear", command=self._clear_profile).pack(side="left", padx=(8, 0))
+
+        ttk.Label(outer, textvariable=self.setup_msg_var, wraplength=680, foreground="#555555").pack(
             anchor="w", pady=(10, 0)
         )
 
@@ -348,6 +441,24 @@ class App(tk.Tk):
             self.setup_path_var.set(path)
             self.setup_msg_var.set("File selected. Click Continue to open the tool.")
 
+    def _browse_profile(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Select board profile",
+            defaultextension=".tcl",
+            filetypes=[("Tcl profile (*.tcl)", "*.tcl"), ("All files", "*.*")],
+            initialdir=profile_browse_dir(),
+        )
+        if path:
+            self.setup_profile_var.set(path)
+            self.setup_msg_var.set("Profile selected. Click Continue to open the tool.")
+
+    def _clear_profile(self) -> None:
+        self.setup_profile_var.set("")
+        self.setup_msg_var.set(
+            "Profile cleared. Smoke addresses stay 0x0 until you pick a file."
+        )
+
     def _enter_main(self) -> None:
         picked = validate_xsdb(self.setup_path_var.get())
         if picked is None:
@@ -359,10 +470,20 @@ class App(tk.Tk):
                 "Select a valid xsdb.bat (name must be xsdb.bat, extension .bat).",
             )
             return
+        profile, profile_err = validate_profile(self.setup_profile_var.get())
+        if profile_err:
+            self.setup_msg_var.set(profile_err.replace("\n", " "))
+            messagebox.showwarning("Board profile", profile_err)
+            return
         self.xsdb_path = picked
         self.xsdb_var.set(str(picked))
+        self.profile_path = profile
+        self.profile_var.set(str(profile) if profile else "(none)")
         try:
-            save_xsdb_path(picked)
+            save_config({
+                "xsdb_bat": str(picked),
+                "profile": str(profile) if profile else "",
+            })
         except OSError as exc:
             messagebox.showwarning(
                 "Could not save path",
@@ -370,13 +491,17 @@ class App(tk.Tk):
             )
         if self.session:
             self.session.close()
-        self.session = XsdbSession(picked, HERE / "gui.tcl")
+        self.session = XsdbSession(picked, HERE / "gui.tcl", profile=profile)
         self.setup_frame.pack_forget()
         self.title("Vivado Lab Reg")
         self.geometry("1100x720")
         self.minsize(920, 600)
         self.main_frame.pack(fill="both", expand=True)
         self._log(f"xsdb = {picked}")
+        if profile:
+            self._log(f"profile = {profile}")
+        else:
+            self._log("profile = (none) — smoke addresses stay 0x0 until a profile is set")
 
     def _back_setup(self) -> None:
         if self.busy:
@@ -386,9 +511,9 @@ class App(tk.Tk):
             self.session.close()
             self.session = None
         self.main_frame.pack_forget()
-        self.title("Vivado Lab Reg — Select xsdb.bat")
-        self.geometry("720x360")
-        self.minsize(640, 300)
+        self.title("Vivado Lab Reg — Setup")
+        self.geometry("760x520")
+        self.minsize(680, 460)
         self.setup_frame.pack(fill="both", expand=True)
 
     def _build(self) -> None:
@@ -399,7 +524,7 @@ class App(tk.Tk):
         # menu
         menubar = tk.Menu(self)
         file_m = tk.Menu(menubar, tearoff=0)
-        file_m.add_command(label="Change xsdb…", command=self._back_setup)
+        file_m.add_command(label="Setup…", command=self._back_setup)
         file_m.add_separator()
         file_m.add_command(label="Exit", command=self._on_close)
         menubar.add_cascade(label="File", menu=file_m)
@@ -408,7 +533,7 @@ class App(tk.Tk):
             label="About",
             command=lambda: messagebox.showinfo(
                 "About",
-                "Vivado Lab Reg\nXSDB register peek/poke\nScanned MicroBlaze and JTAG-to-AXI targets\nMIT License",
+                "Vivado Lab Reg\nXSDB register peek/poke\nScanned MicroBlaze and JTAG-to-AXI targets\nSmoke addresses come from a board profile\nMIT License",
             ),
         )
         menubar.add_cascade(label="Help", menu=help_m)
@@ -432,6 +557,10 @@ class App(tk.Tk):
         conn.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 6))
         ttk.Label(conn, text="xsdb").grid(row=0, column=0, sticky="w")
         ttk.Label(conn, textvariable=self.xsdb_var).grid(row=0, column=1, sticky="w", padx=8)
+        ttk.Label(conn, text="profile").grid(row=1, column=0, sticky="nw", pady=(4, 0))
+        ttk.Label(conn, textvariable=self.profile_var, wraplength=900).grid(
+            row=1, column=1, sticky="w", padx=8, pady=(4, 0)
+        )
 
         # body
         body = ttk.Frame(root, padding=(10, 0, 10, 0))
@@ -771,20 +900,26 @@ class App(tk.Tk):
         def work() -> None:
             err = None
             out = ""
+            banner = ""
             try:
-                sess.start()
+                banner = sess.start()
                 out = sess.call("gui_connect", timeout=40)
             except Exception as exc:
                 err = str(exc)
                 sess.close()
-            self.after(0, lambda: self._connected(out, err))
+            self.after(
+                0,
+                lambda out=out, err=err, banner=banner: self._connected(out, err, banner),
+            )
 
         self._set_busy(True)
         self._log("Starting XSDB and connect …")
         threading.Thread(target=work, daemon=True).start()
 
-    def _connected(self, out: str, err: str | None) -> None:
+    def _connected(self, out: str, err: str | None, banner: str = "") -> None:
         self.busy = False
+        if banner.strip():
+            self._log(banner.strip())
         if err or not connect_ok(out):
             self.connected = False
             self.selected_id = None

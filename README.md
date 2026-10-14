@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 > **What this repo is**: Windows GUI + CLI that keep a resident **XSDB** session, **scan** the JTAG chain, and let you pick a register target from the list (id + name), then `mrd` / `mwr` / write-and-read-back.  
-> **Validated**: Virtex UltraScale+ + Vivado Lab 2022.2 (example smoke bases in `tool.tcl` are board-specific — override with a [board profile](profiles/README.md)).  
+> **Validated**: Virtex UltraScale+ + Vivado Lab 2022.2. Smoke bases come from a [board profile](profiles/README.md) (Master Base Address). With no profile they stay `0x0` and that read is skipped.  
 > **Not**: full Vivado/Vitis, bitstream download, ILA, or Hardware Manager replacement. You must install **Vivado Lab** yourself (not redistributed here).
 
 ---
@@ -23,7 +23,7 @@
 
 1. **Prep.** Board powered, bitstream loaded, Hardware Manager closed. On the setup page, pick `xsdb.bat` if it is not already saved. CLI can also use Lab `bin` on `PATH` or `XSDB`. [Before you start](#before-you-start)
 2. **GUI.** Run `gui.cmd` (or `pythonw gui.py`). **Connect** scans the chain; select one row from **Targets**; then Read/Write. [Windows GUI](#windows-gui-recommended)
-3. **CLI verify.** `xsdb.cmd verify` (or `./xsdb.sh verify`) reads the MicroBlaze smoke base and each JTAG2AXI the scan finds. [Quick verify](#quick-verify)
+3. **CLI verify.** `xsdb.cmd verify --profile <file.tcl>` (or `./xsdb.sh verify --profile <file.tcl>`) reads the MicroBlaze Master Base and each JTAG2AXI the scan finds. No profile, or an address of `0x0`, skips that read. [Quick verify](#quick-verify)
 4. **Interactive.** `xsdb.cmd` then `mb` / `jtag 1` / `smoke` / `rd` / `wr`. [CLI](#cli)
 5. **Board change.** Click **Refresh targets** and select again; replace smoke bases via profile. [How it works](#how-it-works--board-support)
 
@@ -55,7 +55,7 @@ User script / GUI  →  XSDB  →  hw_server  →  FPGA
 
 This tool is **not** tied to one board. It uses **Vivado Lab XSDB → hw_server → JTAG**, then `mrd` / `mwr` on targets found on the scan chain. The GUI lists those register targets with id and name; you select a row from that scan.
 
-Validation used a **Virtex UltraScale+** FPGA. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards or bitstreams, click **Refresh targets** and select again, and replace smoke base addresses with that board's Address Map (use a board profile). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
+Validation used a **Virtex UltraScale+** FPGA. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards or bitstreams, click **Refresh targets** and select again, and point smoke at that board's Master Base Addresses with a [board profile](profiles/README.md). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
 
 What stays the same across boards: no full Vivado/Vitis install — only a Lab JTAG session for register peek/poke.
 
@@ -107,12 +107,14 @@ Example paths:
 
 After **Connect**, **Targets** lists the register targets from that scan (id + name). Select the row, then use the address map that belongs to it. MicroBlaze and JTAG-to-AXI still have different maps.
 
-| Target class | CLI commands | Address basis | Example smoke (Virtex UltraScale+ lab) |
+| Target class | CLI commands | Address basis | Smoke address |
 | --- | --- | --- | --- |
-| MicroBlaze | `rd` / `wr` / `smoke` | **microblaze_0 / Data** Address Map | `0x11080000` |
-| JTAG-to-AXI (Jtag Master) | `jrd` / `jwr` / `jsmoke` | Address Map behind that JTAG2AXI | `0x116BCC00` |
+| MicroBlaze | `rd` / `wr` / `smoke` | **microblaze_0 / Data** Master Base Address | `::MB_SMOKE_ADDR` in the board profile |
+| JTAG-to-AXI (Jtag Master) | `jrd` / `jwr` / `jsmoke` | Master Base Address behind that JTAG2AXI | `::JTAG_SMOKE_ADDR` in the board profile |
 
-Do not poke an MB address through JTAG2AXI (often `DEC0DE1C` decode fail). Do not poke `0x116BCxxx` through MicroBlaze if that window is Jtag Master only.
+These smoke values are the **Master Base Address** from Vivado Address Editor (where that master sees offset 0), not the slave's own base of `0x0`. `0x0` in the profile means skip that smoke read.
+
+Do not poke a MicroBlaze address through JTAG2AXI (often `DEC0DE1C` decode fail). Do not poke a JTAG-to-AXI-only window through MicroBlaze.
 
 A `JTAG2AXI` row is the same class as Hardware Manager `hw_axi` (Jtag Master). One scan on a Virtex UltraScale+ FPGA showed two of them; the ids change when the chain changes. In the GUI, select the scanned row. CLI `jtag n` still means the nth JTAG2AXI in that scan.
 
@@ -123,19 +125,21 @@ Lab only speaks JTAG/debug. This repo only uses `connect` / `targets` / `mrd` / 
 ## Quick verify
 
 ```bat
-xsdb.cmd verify
+xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 ```
 
 Linux:
 
 ```bash
-./xsdb.sh verify
+./xsdb.sh verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
 ```
+
+`verify` with no profile still connects and scans. Both smoke addresses stay `0x0`, and those `mrd`s are skipped. `VIVADO_LAB_REG_PROFILE` (or `XSDB_PROFILE`) points at the same `.tcl` file if you omit `--profile`.
 
 That CLI run:
 
-1. Selects MicroBlaze and `mrd` of the MB smoke base.
-2. Selects each JTAG2AXI the scan finds and `mrd` of the JTAG smoke base.
+1. Selects MicroBlaze and `mrd` of `MB_SMOKE_ADDR` (skipped when that address is `0x0`).
+2. Selects each JTAG2AXI the scan finds and `mrd` of `JTAG_SMOKE_ADDR` (skipped when that address is `0x0`).
 
 ---
 
@@ -146,20 +150,25 @@ Windows: double-click `xsdb.cmd`. Linux: `./xsdb.sh`. Then:
 ```tcl
 mb
 smoke
-rd 11080000 10
 
 jtag 1
 jsmoke
-rd 116BCC00 4
-wr 116BCC08 1
+rd 00001000 1
 ```
 
-Override example smoke bases before sourcing `tool.tcl` (see [profiles/README.md](profiles/README.md)):
+`smoke` / `jsmoke` use the board profile loaded with `tool.tcl`. Copy `profiles/example.tcl` to `profiles/private/`, fill in Master Base Addresses, then:
 
-```tcl
-set ::MB_SMOKE_ADDR   0x00000000
-set ::JTAG_SMOKE_ADDR 0x00000000
+```bat
+xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 ```
+
+```bash
+./xsdb.sh --profile /lab/vivado-lab-reg/profiles/private/board.tcl
+./xsdb.sh verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
+```
+
+The GUI setup page stores that path in `%APPDATA%\VivadoLabReg\config.json` and passes it into the XSDB session on Connect, so **Verify paths** matches the CLI. See [profiles/README.md](profiles/README.md).
 
 ---
 
@@ -172,6 +181,8 @@ build_exe.bat
 ```
 
 Produces `VivadoLabReg.exe` under `dist/` (gitignored). Prefer `gui.cmd` + Python for development.
+
+The GUI stores `xsdb.bat` and the optional board-profile path in `%APPDATA%\VivadoLabReg\config.json`. The profile file stays outside the exe. Copy `profiles/example.tcl` to `profiles/private/` for a real board.
 
 ---
 

@@ -4,6 +4,8 @@
 
 set ::XSDB_QUIET 1
 set here [file dirname [file normalize [info script]]]
+# tool.tcl loads VIVADO_LAB_REG_PROFILE or XSDB_PROFILE when the GUI or
+# xsdb.cmd / xsdb.sh set that variable before this process starts.
 source [file join $here tool.tcl]
 
 catch {fconfigure stdout -buffering none}
