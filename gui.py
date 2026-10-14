@@ -47,8 +47,8 @@ THIS_PC = "::{20D04FE0-3AEA-1069-A2D8-08002B30309D}"
 
 PATH_NAME = {
     "mb": "MicroBlaze",
-    "j1": "JTAG2AXI #1 (Jtag Master)",
-    "j2": "JTAG2AXI #2 (Jtag Master)",
+    "j1": "JTAG2AXI #1（Jtag Master）",
+    "j2": "JTAG2AXI #2（Jtag Master）",
 }
 
 
@@ -224,16 +224,16 @@ class App(tk.Tk):
         self.addr_var = tk.StringVar(value="")
         self.len_var = tk.StringVar(value="1")
         self.data_var = tk.StringVar(value="00000001")
-        self.status_var = tk.StringVar(value="Disconnected")
+        self.status_var = tk.StringVar(value="未连接")
         self.xsdb_var = tk.StringVar(value="")
         self.setup_path_var = tk.StringVar(value="")
         self.setup_msg_var = tk.StringVar(
-            value="Choose xsdb.bat from Vivado Lab. Continue opens the main window."
+            value="请选择本机 Vivado Lab 中的 xsdb.bat；点「继续」进入主界面。"
         )
         saved = load_saved_xsdb()
         if saved:
             self.setup_path_var.set(saved)
-            self.setup_msg_var.set("Loaded last saved path. Click Continue when ready.")
+            self.setup_msg_var.set("已载入上次保存的路径，确认后点「继续」。")
         self.setup_frame = ttk.Frame(self)
         self.main_frame = ttk.Frame(self)
         self._build_setup()
@@ -246,10 +246,10 @@ class App(tk.Tk):
         outer = ttk.Frame(self.setup_frame, padding=24)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(outer, text="Vivado Lab Reg", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(outer, text="Vivado Lab 寄存器工具", font=("Segoe UI", 16, "bold")).pack(anchor="w")
         ttk.Label(
             outer,
-            text="Register peek/poke via Vivado Lab XSDB (MicroBlaze / JTAG-to-AXI)",
+            text="通过 Vivado Lab XSDB 做寄存器读写（MicroBlaze / JTAG-to-AXI）",
             foreground="#555555",
         ).pack(anchor="w", pady=(4, 16))
 
@@ -264,11 +264,11 @@ class App(tk.Tk):
 
         row = ttk.Frame(box)
         row.pack(fill="x")
-        ttk.Label(row, text="Path", width=8).pack(side="left")
+        ttk.Label(row, text="路径", width=8).pack(side="left")
         ttk.Entry(row, textvariable=self.setup_path_var).pack(
             side="left", fill="x", expand=True, padx=(0, 8)
         )
-        ttk.Button(row, text="Browse…", command=self._browse_xsdb).pack(side="left")
+        ttk.Button(row, text="浏览…", command=self._browse_xsdb).pack(side="left")
 
         ttk.Label(box, textvariable=self.setup_msg_var, wraplength=640, foreground="#555555").pack(
             anchor="w", pady=(10, 0)
@@ -276,31 +276,31 @@ class App(tk.Tk):
 
         btns = ttk.Frame(outer)
         btns.pack(fill="x", pady=(20, 0))
-        ttk.Button(btns, text="Exit", command=self._on_close).pack(side="right")
-        ttk.Button(btns, text="Continue", command=self._enter_main).pack(side="right", padx=(0, 8))
+        ttk.Button(btns, text="退出", command=self._on_close).pack(side="right")
+        ttk.Button(btns, text="继续", command=self._enter_main).pack(side="right", padx=(0, 8))
 
     def _browse_xsdb(self) -> None:
         path = filedialog.askopenfilename(
             parent=self,
-            title="Select Vivado Lab xsdb.bat",
+            title="选择 Vivado Lab 的 xsdb.bat",
             defaultextension=".bat",
-            filetypes=[("Batch files (*.bat)", "*.bat"), ("All files", "*.*")],
+            filetypes=[("批处理 (*.bat)", "*.bat"), ("所有文件", "*.*")],
             initialdir=THIS_PC,
             initialfile="xsdb.bat",
         )
         if path:
             self.setup_path_var.set(path)
-            self.setup_msg_var.set("File selected. Click Continue to open the tool.")
+            self.setup_msg_var.set("已选择文件，点「继续」进入主界面。")
 
     def _enter_main(self) -> None:
         picked = validate_xsdb(self.setup_path_var.get())
         if picked is None:
             self.setup_msg_var.set(
-                "Path invalid. Choose an existing xsdb.bat on this PC."
+                "路径无效：请选择本机存在的 xsdb.bat。"
             )
             messagebox.showwarning(
-                "xsdb.bat required",
-                "Select a valid xsdb.bat (name must be xsdb.bat, extension .bat).",
+                "需要 xsdb.bat",
+                "请选择有效的 xsdb.bat（文件名必须是 xsdb.bat，扩展名 .bat）。",
             )
             return
         self.xsdb_path = picked
@@ -309,7 +309,7 @@ class App(tk.Tk):
             save_xsdb_path(picked)
         except OSError as exc:
             messagebox.showwarning(
-                "Could not save path",
+                "路径未保存",
                 f"xsdb is usable, but config was not written:\n{config_file()}\n{exc}",
             )
         if self.session:
@@ -343,36 +343,36 @@ class App(tk.Tk):
         # menu
         menubar = tk.Menu(self)
         file_m = tk.Menu(menubar, tearoff=0)
-        file_m.add_command(label="Change xsdb…", command=self._back_setup)
+        file_m.add_command(label="更换 xsdb…", command=self._back_setup)
         file_m.add_separator()
-        file_m.add_command(label="Exit", command=self._on_close)
-        menubar.add_cascade(label="File", menu=file_m)
+        file_m.add_command(label="退出", command=self._on_close)
+        menubar.add_cascade(label="文件", menu=file_m)
         help_m = tk.Menu(menubar, tearoff=0)
         help_m.add_command(
-            label="About",
+            label="关于",
             command=lambda: messagebox.showinfo(
                 "About",
-                "Vivado Lab Reg\nXSDB register peek/poke\nMicroBlaze & JTAG-to-AXI\nMIT License",
+                "Vivado Lab 寄存器工具\n经 XSDB 读写寄存器\nMicroBlaze 与 JTAG-to-AXI\nMIT 许可",
             ),
         )
-        menubar.add_cascade(label="Help", menu=help_m)
+        menubar.add_cascade(label="帮助", menu=help_m)
         self.config(menu=menubar)
 
         # toolbar
         bar = ttk.Frame(root, padding=(10, 8))
         bar.grid(row=0, column=0, sticky="ew")
-        ttk.Label(bar, text="Status").pack(side="left")
+        ttk.Label(bar, text="状态").pack(side="left")
         self.status_label = ttk.Label(bar, textvariable=self.status_var, width=28)
         self.status_label.pack(side="left", padx=(6, 16))
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(bar, text="Connect", command=self._connect).pack(side="left", padx=2)
-        ttk.Button(bar, text="Disconnect", command=self._disconnect).pack(side="left", padx=2)
-        ttk.Button(bar, text="Refresh targets", command=self._targets).pack(side="left", padx=2)
-        ttk.Button(bar, text="Verify paths", command=self._verify).pack(side="left", padx=2)
-        ttk.Button(bar, text="Clear", command=self._clear).pack(side="left", padx=2)
+        ttk.Button(bar, text="连接", command=self._connect).pack(side="left", padx=2)
+        ttk.Button(bar, text="断开", command=self._disconnect).pack(side="left", padx=2)
+        ttk.Button(bar, text="刷新 targets", command=self._targets).pack(side="left", padx=2)
+        ttk.Button(bar, text="验证路径", command=self._verify).pack(side="left", padx=2)
+        ttk.Button(bar, text="清空", command=self._clear).pack(side="left", padx=2)
 
         # connection strip
-        conn = ttk.LabelFrame(root, text="Connection", padding=8)
+        conn = ttk.LabelFrame(root, text="连接", padding=8)
         conn.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 6))
         ttk.Label(conn, text="xsdb").grid(row=0, column=0, sticky="w")
         ttk.Label(conn, textvariable=self.xsdb_var).grid(row=0, column=1, sticky="w", padx=8)
@@ -384,11 +384,11 @@ class App(tk.Tk):
         body.columnconfigure(1, weight=2)
         body.rowconfigure(1, weight=1)
 
-        pathf = ttk.LabelFrame(body, text="Access path", padding=8)
+        pathf = ttk.LabelFrame(body, text="访问路径", padding=8)
         pathf.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 6))
         ttk.Label(
             pathf,
-            text="Selecting a path only switches the XSDB target (no address required).",
+            text="选路径只切换 XSDB target，不需要先填地址。",
             wraplength=360,
             foreground="#555555",
         ).pack(anchor="w", pady=(0, 6))
@@ -401,48 +401,48 @@ class App(tk.Tk):
         ).pack(anchor="w", pady=2)
         ttk.Radiobutton(
             pathf,
-            text="JTAG2AXI #1 — Jtag Master (hw_axi_1)",
+            text="JTAG2AXI #1 — Jtag Master（hw_axi_1）",
             value="j1",
             variable=self.path_var,
             command=self._on_path,
         ).pack(anchor="w", pady=2)
         ttk.Radiobutton(
             pathf,
-            text="JTAG2AXI #2 — Jtag Master (hw_axi_2)",
+            text="JTAG2AXI #2 — Jtag Master（hw_axi_2）",
             value="j2",
             variable=self.path_var,
             command=self._on_path,
         ).pack(anchor="w", pady=2)
         ttk.Label(
             pathf,
-            text="Listed paths match this lab bitstream. Other boards may differ — use Refresh targets.",
+            text="当前列表对应本实验室 bitstream；其他板可能不同，请用「刷新 targets」。",
             wraplength=360,
             foreground="#555555",
         ).pack(anchor="w", pady=(8, 0))
 
-        ops = ttk.LabelFrame(body, text="Register access", padding=8)
+        ops = ttk.LabelFrame(body, text="寄存器读写", padding=8)
         ops.grid(row=0, column=1, sticky="nsew", pady=(0, 6))
         form = ttk.Frame(ops)
         form.pack(fill="x")
-        ttk.Label(form, text="Address").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Label(form, text="地址").grid(row=0, column=0, sticky="w", pady=2)
         ttk.Entry(form, textvariable=self.addr_var, width=18).grid(row=0, column=1, sticky="w", padx=6, pady=2)
-        ttk.Label(form, text="Length (1–256)").grid(row=0, column=2, sticky="w", padx=(12, 0), pady=2)
+        ttk.Label(form, text="长度 (1–256)").grid(row=0, column=2, sticky="w", padx=(12, 0), pady=2)
         ttk.Entry(form, textvariable=self.len_var, width=6).grid(row=0, column=3, sticky="w", padx=6, pady=2)
-        ttk.Label(form, text="Data").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Label(form, text="数据").grid(row=1, column=0, sticky="w", pady=2)
         ttk.Entry(form, textvariable=self.data_var, width=18).grid(row=1, column=1, sticky="w", padx=6, pady=2)
         bt = ttk.Frame(ops)
         bt.pack(fill="x", pady=(10, 0))
-        ttk.Button(bt, text="Read", command=self._rd).pack(side="left", padx=(0, 6))
-        ttk.Button(bt, text="Write", command=self._wr).pack(side="left", padx=(0, 6))
-        ttk.Button(bt, text="Write + Readback", command=self._wrd).pack(side="left")
+        ttk.Button(bt, text="读", command=self._rd).pack(side="left", padx=(0, 6))
+        ttk.Button(bt, text="写", command=self._wr).pack(side="left", padx=(0, 6))
+        ttk.Button(bt, text="写+读回", command=self._wrd).pack(side="left")
 
-        last = ttk.LabelFrame(body, text="History (last 100)", padding=4)
+        last = ttk.LabelFrame(body, text="历史（最近 100 次）", padding=4)
         last.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
         rcols = ("op", "addr", "data")
         self.tree = ttk.Treeview(last, columns=rcols, show="headings", height=16)
-        self.tree.heading("op", text="Op")
-        self.tree.heading("addr", text="Address")
-        self.tree.heading("data", text="Data")
+        self.tree.heading("op", text="操作")
+        self.tree.heading("addr", text="地址")
+        self.tree.heading("data", text="数据")
         self.tree.column("op", width=48, anchor="w")
         self.tree.column("addr", width=120, anchor="w")
         self.tree.column("data", width=120, anchor="w")
@@ -452,7 +452,7 @@ class App(tk.Tk):
         syh.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", self._from_tree)
 
-        right = ttk.LabelFrame(body, text="Log", padding=4)
+        right = ttk.LabelFrame(body, text="日志", padding=4)
         right.grid(row=1, column=1, sticky="nsew")
         self.log = tk.Text(right, wrap="word", height=12, font=("Consolas", 10), relief="flat")
         sy = ttk.Scrollbar(right, orient="vertical", command=self.log.yview)
@@ -465,7 +465,7 @@ class App(tk.Tk):
         foot.grid(row=3, column=0, sticky="ew")
         ttk.Label(
             foot,
-            text="Power the board and load the bitstream first. Do not leave Hardware Manager holding JTAG.",
+            text="板子先上电并已下载 bitstream；Hardware Manager 不要占着 JTAG。",
             foreground="#555555",
         ).pack(side="left")
 
@@ -479,11 +479,11 @@ class App(tk.Tk):
     def _set_busy(self, busy: bool) -> None:
         self.busy = busy
         if busy:
-            self.status_var.set("Busy…")
+            self.status_var.set("工作中…")
         elif self.connected:
-            self.status_var.set(f"Connected · {self._path_name()} selected")
+            self.status_var.set(f"已连接 · {self._path_name()} 已选中")
         else:
-            self.status_var.set("Disconnected")
+            self.status_var.set("未连接")
 
     def _need_session(self) -> bool:
         if not self.session or not self.connected or not self.session.alive:
@@ -519,7 +519,7 @@ class App(tk.Tk):
             msg = err or out
             self._log(msg)
             if not self.session or not self.session.alive:
-                self.status_var.set("Disconnected")
+                self.status_var.set("未连接")
             messagebox.showerror(title, msg)
             return
         if kind == "select":
@@ -615,7 +615,7 @@ class App(tk.Tk):
         self._set_busy(False)
         if err:
             self.connected = False
-            self.status_var.set("Disconnected")
+            self.status_var.set("未连接")
             self._log(err)
             messagebox.showerror("连接失败", err)
             return
@@ -628,7 +628,7 @@ class App(tk.Tk):
         if self.session:
             self.session.close()
         self.connected = False
-        self.status_var.set("Disconnected")
+        self.status_var.set("未连接")
         self._log("已断开")
 
     def _clear(self) -> None:
