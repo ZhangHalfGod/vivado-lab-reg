@@ -16,6 +16,8 @@ from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen
 from tkinter import filedialog, messagebox, ttk
 
+import addr_map
+
 def app_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
@@ -191,6 +193,114 @@ def profile_browse_dir() -> str:
     return str(HERE)
 
 
+# Address-map filter labels. Keys match addr_map.for_path ("mb" / "jtag").
+MAP_FILTERS = (
+    ("all", "All"),
+    ("mb", "MicroBlaze path"),
+    ("jtag", "JTAG-Lite path"),
+)
+MAP_FILTER_BY_LABEL = {label: key for key, label in MAP_FILTERS}
+ADDRESS_MAP_SUFFIXES = {".xlsx", ".csv"}
+
+
+def initial_address_map_text() -> str:
+    """Saved workbook path. Absent key and empty string both mean none."""
+    data = load_config()
+    if "address_map" in data:
+        return str(data.get("address_map") or "").strip()
+    return ""
+
+
+def address_map_browse_dir(current: str = "") -> str:
+    text = (current or "").strip().strip('"')
+    if text:
+        parent = Path(text).expanduser().parent
+        if parent.is_dir():
+            return str(parent)
+    examples = HERE / "examples"
+    if examples.is_dir():
+        return str(examples)
+    return str(HERE)
+
+
+def private_profile_save_dir() -> str:
+    """Save-as starts in profiles/private when that folder exists."""
+    return profile_browse_dir()
+
+
+def validate_address_map(raw: str) -> tuple[Path | None, str | None]:
+    """Return ``(path, error)``. Empty input is ``(None, None)``."""
+    text = (raw or "").strip().strip('"')
+    if not text:
+        return None, None
+    path = Path(text)
+    if not path.is_file():
+        return None, f"Address map not found:\n{text}"
+    if path.suffix.lower() not in ADDRESS_MAP_SUFFIXES:
+        return None, "Address map must be a .xlsx or .csv file."
+    return path.resolve(), None
+
+
+def filter_imported_slaves(
+    slaves: list[addr_map.Slave], key: str
+) -> tuple[list[addr_map.Slave], list[str]]:
+    """All rows, or the MicroBlaze / JTAG-Lite subset from ``for_path``."""
+    if key == "mb":
+        rows = addr_map.for_path(slaves, "mb")
+        _matched, notes = addr_map.select_mb(slaves)
+        return rows, notes
+    if key in {"jtag", "j1", "j2"}:
+        rows = addr_map.for_path(slaves, "jtag")
+        _matched, notes = addr_map.select_jtag(slaves)
+        return rows, notes
+    return list(slaves), []
+
+
+def profile_name_filters(
+    selected: list[addr_map.Slave],
+) -> tuple[str | None, str | None]:
+    """``--mb-name`` / ``--jtag-name`` from rows the user picked.
+
+    The first MicroBlaze data slave and the first Lite slave win. An empty
+    selection leaves both ``None`` so suggest-profile uses the CLI first match.
+    """
+    mb_name = None
+    jtag_name = None
+    for slave in selected:
+        iface = slave.iface.upper()
+        if mb_name is None and iface in {"M_AXI_DP", "DATA"}:
+            mb_name = slave.name
+        elif jtag_name is None and "LITE" in iface:
+            jtag_name = slave.name
+    return mb_name, jtag_name
+
+
+def build_profile_suggestion(
+    slaves: list[addr_map.Slave],
+    selected: list[addr_map.Slave],
+    source: str,
+) -> tuple[str, list[str]]:
+    """Same Tcl snippet as ``addr_map --suggest-profile``."""
+    mb_name, jtag_name = profile_name_filters(selected)
+    return addr_map.suggest_profile(
+        slaves,
+        source=source,
+        mb_name=mb_name,
+        jtag_name=jtag_name,
+    )
+
+
+def openpyxl_message(exc: BaseException) -> str:
+    text = str(exc).strip() or "Could not read the address map."
+    if "openpyxl" in text.lower():
+        return (
+            "reading .xlsx needs openpyxl.\n"
+            "Install it with: pip install openpyxl\n"
+            "A CSV with the same reference columns is also accepted."
+        )
+    return text
+
+
 def _hidden_startupinfo():
     if os.name != "nt":
         return None
@@ -332,8 +442,8 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Vivado Lab Reg — Setup")
-        self.geometry("760x520")
-        self.minsize(680, 460)
+        self.geometry("780x760")
+        self.minsize(680, 640)
         self.xsdb_path: Path | None = None
         self.profile_path: Path | None = None
         self.session: XsdbSession | None = None
@@ -353,23 +463,56 @@ class App(tk.Tk):
         self.profile_var = tk.StringVar(value="(none)")
         self.setup_path_var = tk.StringVar(value="")
         self.setup_profile_var = tk.StringVar(value="")
+        self.setup_address_map_var = tk.StringVar(value="")
         self.setup_msg_var = tk.StringVar(
             value="Choose xsdb.bat from Vivado Lab. A board profile is optional. Continue opens the main window."
         )
         self.target_msg = tk.StringVar(value="Connect to scan targets on the JTAG chain.")
+        self.map_filter_var = tk.StringVar(value=MAP_FILTERS[0][1])
+        self.map_msg = tk.StringVar(
+            value="Optional. Load a reference Address Map (.xlsx) to browse Master Base addresses."
+        )
+        self.map_slaves: list[addr_map.Slave] = []
+        self._map_by_iid: dict[str, addr_map.Slave] = {}
+        self._filling_map = False
         saved = load_saved_xsdb()
         saved_profile = initial_profile_text()
+        saved_map = initial_address_map_text()
         if saved:
             self.setup_path_var.set(saved)
             self.setup_msg_var.set("Loaded last saved path. Click Continue when ready.")
         if saved_profile:
             self.setup_profile_var.set(saved_profile)
+        if saved_map:
+            self.setup_address_map_var.set(saved_map)
         self.setup_frame = ttk.Frame(self)
         self.main_frame = ttk.Frame(self)
         self._build_setup()
         self._build()
         self.setup_frame.pack(fill="both", expand=True)
+        self._fit_setup_window()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _fit_setup_window(self) -> None:
+        """Keep Continue on screen after the optional address-map row."""
+        self.update_idletasks()
+        req_w = max(780, self.setup_frame.winfo_reqwidth() + 16)
+        req_h = self.setup_frame.winfo_reqheight() + 28
+        req_h = max(req_h, 640)
+        self.minsize(680, req_h)
+        self.geometry(f"{req_w}x{req_h}")
+
+    def _fit_main_window(self) -> None:
+        """Size the main window so the address-map list stays clickable."""
+        self.update_idletasks()
+        screen_h = max(self.winfo_screenheight(), 800)
+        screen_w = max(self.winfo_screenwidth(), 1100)
+        req_w = max(1100, self.main_frame.winfo_reqwidth() + 8)
+        req_h = max(900, self.main_frame.winfo_reqheight() + 8)
+        width = min(req_w, screen_w - 40)
+        height = min(req_h, screen_h - 80)
+        self.minsize(min(920, width), min(760, height))
+        self.geometry(f"{width}x{height}")
 
 
     def _build_setup(self) -> None:
@@ -419,6 +562,25 @@ class App(tk.Tk):
         ttk.Button(prow, text="Browse…", command=self._browse_profile).pack(side="left")
         ttk.Button(prow, text="Clear", command=self._clear_profile).pack(side="left", padx=(8, 0))
 
+        amap = ttk.LabelFrame(outer, text="Address map (optional)", padding=12)
+        amap.pack(fill="x", pady=(16, 0))
+        ttk.Label(
+            amap,
+            text="Workbook of Master Base Addresses (prefer address.xlsx). "
+                 "This GUI reads the reference Vivado layout and ignores Slave Base 0x0.\n"
+                 "Other formats: use AI to adapt. See docs/address-map-import.md.",
+            justify="left",
+            wraplength=680,
+        ).pack(anchor="w", pady=(0, 8))
+        arow = ttk.Frame(amap)
+        arow.pack(fill="x")
+        ttk.Label(arow, text="Map", width=8).pack(side="left")
+        ttk.Entry(arow, textvariable=self.setup_address_map_var).pack(
+            side="left", fill="x", expand=True, padx=(0, 8)
+        )
+        ttk.Button(arow, text="Browse…", command=self._browse_address_map).pack(side="left")
+        ttk.Button(arow, text="Clear", command=self._clear_address_map).pack(side="left", padx=(8, 0))
+
         ttk.Label(outer, textvariable=self.setup_msg_var, wraplength=680, foreground="#555555").pack(
             anchor="w", pady=(10, 0)
         )
@@ -459,6 +621,260 @@ class App(tk.Tk):
             "Profile cleared. Smoke addresses stay 0x0 until you pick a file."
         )
 
+    def _browse_address_map(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Select address map",
+            defaultextension=".xlsx",
+            filetypes=[
+                ("Excel workbook (*.xlsx)", "*.xlsx"),
+                ("CSV (*.csv)", "*.csv"),
+                ("All files", "*.*"),
+            ],
+            initialdir=address_map_browse_dir(self.setup_address_map_var.get()),
+            initialfile="address.xlsx",
+        )
+        if path:
+            self.setup_address_map_var.set(path)
+            self.setup_msg_var.set(
+                "Address map selected. Load / Import map lists Master Base rows."
+            )
+            self.map_msg.set("Address map selected. Click Load / Import map.")
+            self._persist_address_map(Path(path))
+
+    def _clear_address_map(self) -> None:
+        self.setup_address_map_var.set("")
+        self.map_slaves = []
+        if getattr(self, "map_tree", None) is not None:
+            self._fill_map_tree()
+        self.map_msg.set("Address map cleared.")
+        self.setup_msg_var.set("Address map cleared.")
+        self._persist_address_map(None)
+
+    def _persist_address_map(self, path: Path | None) -> None:
+        try:
+            save_config({"address_map": str(path) if path else ""})
+        except OSError as exc:
+            messagebox.showwarning(
+                "Could not save path",
+                f"The map path was not written:\n{config_file()}\n{exc}",
+            )
+
+    def _on_map_filter(self, _evt=None) -> None:
+        notes = self._fill_map_tree()
+        if notes:
+            self.map_msg.set(" ".join(notes))
+
+    def _fill_map_tree(self) -> list[str]:
+        label = self.map_filter_var.get()
+        key = MAP_FILTER_BY_LABEL.get(label, "all")
+        rows, notes = filter_imported_slaves(self.map_slaves, key)
+        self._filling_map = True
+        try:
+            children = self.map_tree.get_children()
+            if children:
+                self.map_tree.delete(*children)
+            self._map_by_iid = {}
+            for index, slave in enumerate(rows):
+                iid = f"m{index}"
+                self._map_by_iid[iid] = slave
+                self.map_tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    values=(slave.master, slave.iface, slave.name, slave.base, slave.rng),
+                )
+        finally:
+            self._filling_map = False
+        if self.map_slaves and not notes:
+            self.map_msg.set(
+                f"Showing {len(rows)} of {len(self.map_slaves)} imported slave(s). "
+                "Select a row to copy its Master Base Address."
+            )
+        return notes
+
+    def _selected_map_slaves(self) -> list[addr_map.Slave]:
+        picked: list[addr_map.Slave] = []
+        for iid in self.map_tree.selection():
+            slave = self._map_by_iid.get(str(iid))
+            if slave is not None:
+                picked.append(slave)
+        return picked
+
+    def _on_map_pick(self, _evt=None) -> None:
+        if self._filling_map:
+            return
+        slave = self._map_by_iid.get(str(self.map_tree.focus() or ""))
+        if slave is None:
+            return
+        self.addr_var.set(fmt_hist_hex(slave.addr))
+
+    def _load_address_map(self) -> None:
+        path, err = validate_address_map(self.setup_address_map_var.get())
+        if err:
+            self.map_msg.set(err.replace("\n", " "))
+            messagebox.showwarning("Address map", err)
+            return
+        if path is None:
+            self.map_msg.set("Choose an address map (.xlsx). A typical name is address.xlsx.")
+            messagebox.showinfo(
+                "Address map",
+                "Choose an address map file first. A typical name is address.xlsx.",
+            )
+            return
+        try:
+            slaves = addr_map.load_slaves(path)
+        except addr_map.AddressMapError as exc:
+            msg = openpyxl_message(exc)
+            self.map_msg.set(" ".join(msg.splitlines()))
+            title = "openpyxl required" if "openpyxl" in msg.lower() else "Address map"
+            messagebox.showerror(title, msg)
+            return
+        except Exception as exc:
+            msg = openpyxl_message(exc)
+            self.map_msg.set(" ".join(msg.splitlines()))
+            messagebox.showerror("Address map", msg)
+            return
+        self.map_slaves = slaves
+        self.setup_address_map_var.set(str(path))
+        self._persist_address_map(path)
+        notes = self._fill_map_tree()
+        if not slaves:
+            empty = (
+                "No slaves imported. This GUI uses the reference Vivado layout "
+                "(Name, Interface, Slave Segment, Master Base Address, Range). "
+                "Other formats: use AI to adapt. See docs/address-map-import.md."
+            )
+            self.map_msg.set(empty)
+            messagebox.showwarning("Address map", empty)
+            self._log(f"address map = {path} (0 slaves)")
+            return
+        if notes:
+            self.map_msg.set(" ".join(notes))
+            for note in notes:
+                self._log(note)
+        self._log(f"address map = {path} ({len(slaves)} slaves)")
+
+    def _current_suggestion(self) -> tuple[str, list[str]] | None:
+        if not self.map_slaves:
+            messagebox.showinfo("Address map", "Click Load / Import map first.")
+            return None
+        source = self.setup_address_map_var.get().strip() or "(address map)"
+        return build_profile_suggestion(
+            self.map_slaves, self._selected_map_slaves(), source
+        )
+
+    def _suggest_profile(self) -> None:
+        built = self._current_suggestion()
+        if built is None:
+            return
+        snippet, warnings = built
+        self._show_suggestion(snippet, warnings)
+
+    def _show_suggestion(self, snippet: str, warnings: list[str]) -> None:
+        win = tk.Toplevel(self)
+        win.title("Suggest profile")
+        win.transient(self)
+        win.geometry("760x480")
+        win.minsize(640, 360)
+        outer = ttk.Frame(win, padding=12)
+        outer.pack(fill="both", expand=True)
+        ttk.Label(
+            outer,
+            text="Reference Vivado layout. Nothing is written until you choose Save as…. "
+                 "Other formats: use AI to adapt (docs/address-map-import.md).",
+            wraplength=720,
+        ).pack(anchor="w")
+        if warnings:
+            ttk.Label(
+                outer,
+                text="\n".join(warnings),
+                wraplength=720,
+                foreground="#8a4b08",
+            ).pack(anchor="w", pady=(8, 0))
+        box = tk.Text(outer, wrap="word", height=16, font=("Consolas", 10))
+        box.pack(fill="both", expand=True, pady=(8, 8))
+        box.insert("1.0", snippet)
+        box.configure(state="disabled")
+        buttons = ttk.Frame(outer)
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="Close", command=win.destroy).pack(side="right")
+        ttk.Button(
+            buttons,
+            text="Save as…",
+            command=lambda: self._save_profile_as(snippet, warnings),
+        ).pack(side="right", padx=(0, 8))
+        self._suggestion_win = win
+
+    def _write_private_profile(self) -> None:
+        built = self._current_suggestion()
+        if built is None:
+            return
+        self._save_profile_as(*built)
+
+    def _save_profile_as(self, snippet: str, warnings: list[str] | None = None) -> None:
+        chosen = filedialog.asksaveasfilename(
+            parent=self,
+            title="Save private profile",
+            defaultextension=".tcl",
+            filetypes=[("Tcl profile (*.tcl)", "*.tcl"), ("All files", "*.*")],
+            initialdir=private_profile_save_dir(),
+            initialfile="lab.tcl",
+        )
+        if not chosen:
+            return
+        dest = Path(chosen)
+        if dest.suffix.lower() != ".tcl":
+            messagebox.showwarning("Board profile", "Board profile must be a .tcl file.")
+            return
+        if dest.exists():
+            replace = messagebox.askyesno(
+                "Overwrite profile",
+                f"Replace the existing file?\n{dest}",
+                default=messagebox.NO,
+            )
+            if not replace:
+                self._log(f"Did not overwrite {dest}")
+                return
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(snippet, encoding="utf-8")
+        except OSError as exc:
+            messagebox.showerror(
+                "Write private profile",
+                f"Could not write:\n{dest}\n{exc}",
+            )
+            return
+        notes = list(warnings or [])
+        for note in notes:
+            self._log(note)
+        self._log(f"Wrote private profile {dest}")
+        detail = f"Saved:\n{dest}"
+        if notes:
+            detail += "\n\n" + "\n".join(notes)
+        detail += "\n\nUse this file as the board profile on the next Connect?"
+        if messagebox.askyesno("Write private profile", detail):
+            self._adopt_profile(dest)
+
+    def _adopt_profile(self, path: Path) -> None:
+        self.profile_path = path
+        self.profile_var.set(str(path))
+        self.setup_profile_var.set(str(path))
+        if self.session is not None:
+            self.session.profile = path
+        try:
+            save_config({"profile": str(path)})
+        except OSError as exc:
+            messagebox.showwarning(
+                "Could not save path",
+                f"The profile file was written, but config was not:\n{config_file()}\n{exc}",
+            )
+            return
+        if self.connected:
+            self._log("Profile path saved. Disconnect and Connect to load it.")
+        else:
+            self._log(f"profile = {path}")
+
     def _enter_main(self) -> None:
         picked = validate_xsdb(self.setup_path_var.get())
         if picked is None:
@@ -475,14 +891,22 @@ class App(tk.Tk):
             self.setup_msg_var.set(profile_err.replace("\n", " "))
             messagebox.showwarning("Board profile", profile_err)
             return
+        amap, amap_err = validate_address_map(self.setup_address_map_var.get())
+        if amap_err:
+            self.setup_msg_var.set(amap_err.replace("\n", " "))
+            messagebox.showwarning("Address map", amap_err)
+            return
         self.xsdb_path = picked
         self.xsdb_var.set(str(picked))
         self.profile_path = profile
         self.profile_var.set(str(profile) if profile else "(none)")
+        if amap is not None:
+            self.setup_address_map_var.set(str(amap))
         try:
             save_config({
                 "xsdb_bat": str(picked),
                 "profile": str(profile) if profile else "",
+                "address_map": str(amap) if amap else "",
             })
         except OSError as exc:
             messagebox.showwarning(
@@ -494,14 +918,17 @@ class App(tk.Tk):
         self.session = XsdbSession(picked, HERE / "gui.tcl", profile=profile)
         self.setup_frame.pack_forget()
         self.title("Vivado Lab Reg")
-        self.geometry("1100x720")
-        self.minsize(920, 600)
         self.main_frame.pack(fill="both", expand=True)
+        self._fit_main_window()
         self._log(f"xsdb = {picked}")
         if profile:
             self._log(f"profile = {profile}")
         else:
             self._log("profile = (none) — smoke addresses stay 0x0 until a profile is set")
+        if amap:
+            self._log(f"address map = {amap}")
+        else:
+            self._log("address map = (none)")
 
     def _back_setup(self) -> None:
         if self.busy:
@@ -512,9 +939,8 @@ class App(tk.Tk):
             self.session = None
         self.main_frame.pack_forget()
         self.title("Vivado Lab Reg — Setup")
-        self.geometry("760x520")
-        self.minsize(680, 460)
         self.setup_frame.pack(fill="both", expand=True)
+        self._fit_setup_window()
 
     def _build(self) -> None:
         root = self.main_frame
@@ -567,7 +993,9 @@ class App(tk.Tk):
         body.grid(row=2, column=0, sticky="nsew")
         body.columnconfigure(0, weight=1)
         body.columnconfigure(1, weight=2)
-        body.rowconfigure(1, weight=1)
+        # The map list must keep a clickable height; history can take the rest.
+        body.rowconfigure(1, weight=2, minsize=250)
+        body.rowconfigure(2, weight=1, minsize=120)
 
         pathf = ttk.LabelFrame(body, text="Targets", padding=8)
         pathf.grid(row=0, column=0, sticky="nsew", padx=(0, 6), pady=(0, 6))
@@ -618,10 +1046,82 @@ class App(tk.Tk):
         ttk.Button(bt, text="Write", command=self._wr).pack(side="left", padx=(0, 6))
         ttk.Button(bt, text="Write + Readback", command=self._wrd).pack(side="left")
 
+        mapf = ttk.LabelFrame(body, text="Address map (optional)", padding=8)
+        mapf.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 6))
+        mapf.columnconfigure(0, weight=1)
+        mapf.rowconfigure(3, weight=1)
+        ttk.Label(
+            mapf,
+            text="Reference Vivado layout (Master Base Address; Slave Base 0x0 is ignored). "
+                 "Other formats: use AI to adapt. See docs/address-map-import.md.",
+            wraplength=1000,
+            foreground="#555555",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        map_bar = ttk.Frame(mapf)
+        map_bar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(map_bar, text="Map").pack(side="left")
+        ttk.Entry(map_bar, textvariable=self.setup_address_map_var).pack(
+            side="left", fill="x", expand=True, padx=(6, 6)
+        )
+        ttk.Button(map_bar, text="Browse…", command=self._browse_address_map).pack(side="left", padx=(0, 6))
+        ttk.Button(map_bar, text="Load / Import map", command=self._load_address_map).pack(side="left")
+        map_actions = ttk.Frame(mapf)
+        map_actions.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(map_actions, text="Show").pack(side="left")
+        self.map_filter = ttk.Combobox(
+            map_actions,
+            textvariable=self.map_filter_var,
+            values=[label for _key, label in MAP_FILTERS],
+            state="readonly",
+            width=18,
+        )
+        self.map_filter.pack(side="left", padx=(6, 12))
+        self.map_filter.bind("<<ComboboxSelected>>", self._on_map_filter)
+        ttk.Button(map_actions, text="Suggest profile", command=self._suggest_profile).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(
+            map_actions, text="Write private profile", command=self._write_private_profile
+        ).pack(side="left")
+        map_list = ttk.Frame(mapf)
+        map_list.grid(row=3, column=0, sticky="nsew")
+        mcols = ("master", "iface", "name", "base", "range")
+        map_style = ttk.Style(self)
+        map_style.configure("AddrMap.Treeview", rowheight=22)
+        self.map_tree = ttk.Treeview(
+            map_list,
+            columns=mcols,
+            show="headings",
+            height=6,
+            selectmode="extended",
+            style="AddrMap.Treeview",
+        )
+        self.map_tree.heading("master", text="Master")
+        self.map_tree.heading("iface", text="Interface")
+        self.map_tree.heading("name", text="Slave")
+        self.map_tree.heading("base", text="Master Base Address")
+        self.map_tree.heading("range", text="Range")
+        self.map_tree.column("master", width=140, stretch=False, anchor="w")
+        self.map_tree.column("iface", width=110, stretch=False, anchor="w")
+        self.map_tree.column("name", width=280, stretch=True, anchor="w")
+        self.map_tree.column("base", width=160, stretch=False, anchor="w")
+        self.map_tree.column("range", width=80, stretch=False, anchor="w")
+        map_scroll = ttk.Scrollbar(map_list, orient="vertical", command=self.map_tree.yview)
+        self.map_tree.configure(yscrollcommand=map_scroll.set)
+        self.map_tree.pack(side="left", fill="both", expand=True)
+        map_scroll.pack(side="right", fill="y")
+        self.map_tree.bind("<<TreeviewSelect>>", self._on_map_pick)
+        ttk.Label(
+            mapf,
+            textvariable=self.map_msg,
+            wraplength=1000,
+            foreground="#555555",
+        ).grid(row=4, column=0, sticky="w", pady=(6, 0))
+
         last = ttk.LabelFrame(body, text="History (last 100)", padding=4)
-        last.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
+        last.grid(row=2, column=0, sticky="nsew", padx=(0, 6))
         rcols = ("op", "addr", "data")
-        self.tree = ttk.Treeview(last, columns=rcols, show="headings", height=16)
+        self.tree = ttk.Treeview(last, columns=rcols, show="headings", height=10)
         self.tree.heading("op", text="Op")
         self.tree.heading("addr", text="Address")
         self.tree.heading("data", text="Data")
@@ -635,7 +1135,7 @@ class App(tk.Tk):
         self.tree.bind("<<TreeviewSelect>>", self._from_tree)
 
         right = ttk.LabelFrame(body, text="Log", padding=4)
-        right.grid(row=1, column=1, sticky="nsew")
+        right.grid(row=2, column=1, sticky="nsew")
         self.log = tk.Text(right, wrap="word", height=12, font=("Consolas", 10), relief="flat")
         sy = ttk.Scrollbar(right, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=sy.set)

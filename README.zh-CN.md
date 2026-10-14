@@ -84,6 +84,8 @@ pythonw gui.py
 5. 填地址、长度和数据，再点 **Read** / **Write** / **Write + Readback**。
 6. 换板或换 bitstream 之后，点 **Refresh targets**，再重新选择。
 
+设置页和主窗口都有 **Address map (optional)**。浏览工作簿（建议文件名 `address.xlsx`），再点 **Load / Import map**。列表用的是 **reference** Vivado 布局（Master Base Address，忽略 Slave Base `0x0`）。选中一行会把该地址填进输入框。**Suggest profile** / **Write private profile** 根据选中的行生成 `::MB_SMOKE_ADDR` 和 `::JTAG_SMOKE_ADDR`；没选行时与命令行一样取第一条并给出警告。保存对话框默认 `profiles/private/lab.tcl`，已有文件需确认才覆盖。工作簿路径记在 `%APPDATA%\VivadoLabReg\config.json`。别的表格格式：[请使用 AI 进行适配](docs/address-map-import.md)。
+
 History 最多保留最近 100 次读写。里面的 Address / Data 显示为 8 位十六进制；XSDB 自己的日志里，短地址仍可能不补前导零。
 
 需要本机 Python 3（建议 3.10）。核心逻辑与 `tool.tcl` 相同。
@@ -191,7 +193,7 @@ build_exe.bat
 
 产物在 `dist/VivadoLabReg.exe`（已 gitignore）。开发优先用 `gui.cmd` + Python。
 
-GUI 把 `xsdb.bat` 和可选的 board profile 路径记在 `%APPDATA%\VivadoLabReg\config.json`。profile 文件不打进 exe。真实板子请把 `profiles/example.tcl` 复制到 `profiles/private/`。
+GUI 把 `xsdb.bat`、可选的 board profile 路径和可选的地址表路径记在 `%APPDATA%\VivadoLabReg\config.json`。profile 文件不打进 exe。真实板子请把 `profiles/example.tcl` 复制到 `profiles/private/`。
 
 ---
 

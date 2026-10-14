@@ -84,6 +84,8 @@ Typical flow:
 5. Enter address, length, and data, then **Read / Write / Write + Readback**.
 6. After changing the board or bitstream, click **Refresh targets** and select again.
 
+**Address map (optional)** is on the setup page and the main window. Browse a workbook (prefer `address.xlsx`), then **Load / Import map**. The list is the **reference** Vivado layout (Master Base Address; Slave Base `0x0` is ignored). Select a row to fill the address field. **Suggest profile** / **Write private profile** build `::MB_SMOKE_ADDR` and `::JTAG_SMOKE_ADDR` from the rows you select, or from the CLI first match and its warning. Save starts at `profiles/private/lab.tcl` and does not overwrite without confirmation. The workbook path is stored in `%APPDATA%\VivadoLabReg\config.json`. Other spreadsheet formats: [use AI to adapt](docs/address-map-import.md).
+
 History keeps the last 100 read/write rows. Address and Data there are shown as 8 hex digits; XSDB’s own log may still print short addresses without leading zeros.
 
 Needs Python 3 (3.10 verified). Core logic matches `tool.tcl`.
@@ -191,7 +193,7 @@ build_exe.bat
 
 Produces `VivadoLabReg.exe` under `dist/` (gitignored). Prefer `gui.cmd` + Python for development.
 
-The GUI stores `xsdb.bat` and the optional board-profile path in `%APPDATA%\VivadoLabReg\config.json`. The profile file stays outside the exe. Copy `profiles/example.tcl` to `profiles/private/` for a real board.
+The GUI stores `xsdb.bat`, the optional board-profile path, and the optional address-map path in `%APPDATA%\VivadoLabReg\config.json`. The profile file stays outside the exe. Copy `profiles/example.tcl` to `profiles/private/` for a real board.
 
 ---
 
