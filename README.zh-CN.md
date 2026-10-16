@@ -41,6 +41,7 @@
 - [快速验证](#快速验证)
 - [命令行](#命令行)
 - [机器可读 JSON](#机器可读-json)
+- [Agents / Skill](#agents--skill)
 - [打包](#打包)
 - [许可证](#许可证)
 
@@ -334,6 +335,10 @@ Targets。扫到空链也是成功（`ok` 为 true，`targets` 为 `[]`）。连
 python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
 python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-profile
 ```
+
+### Agents / Skill
+
+给人看的准备步骤、图形界面和交互命令行仍以本 README 为准。Agent 和脚本按 [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md) 操作：调用 `xsdb.cmd --json` 或 `./xsdb.sh --json`，解析 stdout 上的那一个 JSON 对象，默认只跑 `targets`、`rd` / `jrd` / `jrd2` 和 `verify`。只有用户明确要求写入时，才使用 `wr`、`jwr`、`wrd`、`jwrd` 以及对应的 `#2` 写命令。这些写命令会改板上的寄存器。`ok` 为 false 就停。
 
 ---
 
