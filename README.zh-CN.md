@@ -27,7 +27,7 @@
 4. **交互。** `xsdb.cmd` 后 `mb` / `jtag 1` / `smoke` / `rd` / `wr`。[命令行](#命令行)
 5. **换板。** 点 **Refresh targets** 再重新选择；smoke 基址用 profile 换掉。[原理与板型适配](#原理与板型适配)
 
-更细的中文 GUI 说明：[docs/usage-zh.md](docs/usage-zh.md)。
+更细的中文 GUI 说明：[docs/usage-zh.md](docs/usage-zh.md)。文档索引：[docs/README.md](docs/README.md)。
 
 ---
 
@@ -57,7 +57,7 @@
 
 原理不绑死某一块板：走的是 **Vivado Lab 的 XSDB → hw_server → JTAG**，对扫描链上枚举到的 target 做 `mrd` / `mwr`。GUI 按 id 和名字列出当次扫描到的寄存器 target，由你点选。
 
-验证用的是 **Virtex UltraScale+** FPGA。对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**。换板或换 bitstream 后点 **Refresh targets** 再选一次，smoke 基址也要换成那块板的 Master Base Address（用 [board profile](profiles/README.md)）。没有这两类通路、或厂商不是这套工具链（例如 Intel），当前第一期不做。
+验证用的是 **Virtex UltraScale+** FPGA。对其它 FPGA：**同一套 Xilinx/AMD + Vivado Lab + 链上有 MB 和/或 JTAG-to-AXI 时，一般能用**。换板或换 bitstream 后点 **Refresh targets** 再选一次，smoke 基址也要换成那块板的 Master Base Address（用 [board profile](profiles/README.md)）。没有这两类通路、或厂商不是这套工具链（例如 Intel），不在本工具范围内。
 
 和板型无关、真正通用的是：不装完整 Vivado/Vitis，只借 Lab 的 JTAG 会话做寄存器 peek/poke。
 
@@ -79,7 +79,7 @@ pythonw gui.py
 
 典型用法：
 
-1. **准备。** 板上电，bitstream 已加载，关掉 Hardware Manager。设置页若还没选过，先指定 `xsdb.bat`（例如 `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`），再点 **Continue**。
+1. **准备。** 板上电，bitstream 已加载，关掉 Hardware Manager。设置页若还没选过，先指定 `xsdb.bat`（例如 `C:\Xilinx\Vivado_Lab\2022.2\bin\xsdb.bat`），再点 **Continue**。
 2. 点 **Connect**。启动 XSDB，并**扫描** JTAG 链。
 3. **Targets** 列出这次扫到的寄存器 target（例如 MicroBlaze #0、JTAG2AXI），每行是 id 和名字，**不是写死的档位**。列表为空：确认上电并已下载 bitstream，再点 **Refresh targets**。
 4. **选中**一行。这一步只切换 XSDB target，还不需要填地址。
@@ -126,7 +126,7 @@ History 最多保留最近 100 次读写。里面的 Address / Data 显示为 8 
 
 常见路径：
 
-- Windows：`D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` 或 `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
+- Windows：`C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
 - Linux：`/opt/Xilinx/Vivado_Lab/<version>/bin/xsdb`
 
 ---
@@ -340,19 +340,34 @@ python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-
 
 给人看的准备步骤、图形界面和交互命令行仍以本 README 为准。Agent 和脚本按 [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md) 操作：调用 `xsdb.cmd --json` 或 `./xsdb.sh --json`，解析 stdout 上的那一个 JSON 对象，默认只跑 `targets`、`rd` / `jrd` / `jrd2` 和 `verify`。只有用户明确要求写入时，才使用 `wr`、`jwr`、`wrd`、`jwrd` 以及对应的 `#2` 写命令。这些写命令会改板上的寄存器。`ok` 为 false 就停。
 
+**L3。** Agent 或 CI 可以在没有板子的情况下用 `--json` 枚举 target 并读寄存器（`bash tests/test_json_cli.sh`）。写操作由 Skill 约束。可选的 Windows exe（`build_exe.bat` → `dist/VivadoLabReg.exe`）和 `gui.cmd` 是同一个 GUI。exe 不提交，里面也不含 Vivado Lab 或 board profile。
+
 ---
 
 ## 打包
 
-可选 Windows exe（不提交）：
+可选的 Windows 图形界面 exe，给实验机用。打包在那台机器上做。`dist/` 和 `*.exe` 已被 gitignore，本仓不提交二进制。
+
+**打包机**（64 位 Windows）：
+
+- Python 3.10+，带 tkinter（和跑 `gui.py` 的是同一个解释器）
+- PyInstaller（`pip install pyinstaller`，或让 `build_exe.bat` 安装）
+- 若这个 exe 要打开 `.xlsx`，先 `pip install openpyxl` 再打包。同样列名的 CSV 不需要它。
 
 ```bat
 build_exe.bat
+build_exe.bat --nopause
 ```
 
-产物在 `dist/VivadoLabReg.exe`（已 gitignore）。开发优先用 `gui.cmd` + Python。
+脚本按 [VivadoLabReg.spec](VivadoLabReg.spec) 生成 `dist\VivadoLabReg.exe`，不会把 exe 复制到仓库根目录。`--nopause` 跳过最后的按键。
 
-GUI 把 `xsdb.bat`、可选的 board profile 路径和可选的地址表路径记在 `%APPDATA%\VivadoLabReg\config.json`。profile 文件不打进 exe。真实板子请把 `profiles/example.tcl` 复制到 `profiles/private/`。
+**打进 exe 的：** `gui.py`、`addr_map.py`、`gui.tcl`、`tool.tcl` 和 Python 运行时。**不打进 exe 的：**
+
+- Vivado Lab、`xsdb.bat` 和电缆驱动。Lab 自己装，在设置页选择 `xsdb.bat`。
+- Board profile。放在 `profiles/private/`（已被 gitignore），GUI 或 `--profile` 指向该文件。
+- `%APPDATA%\VivadoLabReg\config.json`（xsdb 路径、profile 路径、地址表路径）。
+
+装了 Python 时，`gui.cmd` 跑的是 `gui.py`。没有 Python 的机器双击 `dist\VivadoLabReg.exe`。改过 `gui.py` 或 Tcl 之后要重新跑 `build_exe.bat`。已经生成的 exe 旁边改 Tcl，不会进到那个 exe 里。真实板子把 `profiles/example.tcl` 复制到 `profiles/private/`。
 
 ---
 

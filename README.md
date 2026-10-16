@@ -27,7 +27,7 @@
 4. **Interactive.** `xsdb.cmd` then `mb` / `jtag 1` / `smoke` / `rd` / `wr`. [CLI](#cli)
 5. **Board change.** Click **Refresh targets** and select again; replace smoke bases via profile. [How it works](#how-it-works--board-support)
 
-Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md).
+Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md). Doc index: [docs/README.md](docs/README.md).
 
 ---
 
@@ -57,7 +57,7 @@ User script / GUI  →  XSDB  →  hw_server  →  FPGA
 
 This tool is **not** tied to one board. It uses **Vivado Lab XSDB → hw_server → JTAG**, then `mrd` / `mwr` on targets found on the scan chain. The GUI lists those register targets with id and name; you select a row from that scan.
 
-Validation used a **Virtex UltraScale+** FPGA. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards or bitstreams, click **Refresh targets** and select again, and point smoke at that board's Master Base Addresses with a [board profile](profiles/README.md). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope for phase 1.
+Validation used a **Virtex UltraScale+** FPGA. On other Xilinx/AMD FPGAs the same flow usually works when Vivado Lab can see the cable and the design exposes MicroBlaze and/or JTAG-to-AXI. After changing boards or bitstreams, click **Refresh targets** and select again, and point smoke at that board's Master Base Addresses with a [board profile](profiles/README.md). Non-Xilinx vendors and full Hardware Manager / ILA / bitstream flows are out of scope.
 
 What stays the same across boards: no full Vivado/Vitis install — only a Lab JTAG session for register peek/poke.
 
@@ -79,7 +79,7 @@ pythonw gui.py
 
 Typical flow:
 
-1. **Prep.** Board powered, bitstream loaded, Hardware Manager closed. On the setup page, pick `xsdb.bat` if needed (for example `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`), then **Continue**.
+1. **Prep.** Board powered, bitstream loaded, Hardware Manager closed. On the setup page, pick `xsdb.bat` if needed (for example `C:\Xilinx\Vivado_Lab\2022.2\bin\xsdb.bat`), then **Continue**.
 2. Click **Connect** — starts XSDB and **scans** the JTAG chain.
 3. The **Targets** list shows whatever register targets were found (for example MicroBlaze #0, JTAG2AXI, …) with id and name. These are **not hard-coded slots**. If the list is empty, power the board, load the bitstream, then **Refresh targets**.
 4. **Select** a row. That only switches the XSDB target; no address is required yet.
@@ -126,7 +126,7 @@ Needs Python 3 (3.10 verified). Core logic matches `tool.tcl`.
 
 Example paths:
 
-- Windows: `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` or `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
+- Windows: `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
 - Linux: `/opt/Xilinx/Vivado_Lab/<version>/bin/xsdb`
 
 ---
@@ -340,19 +340,34 @@ python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-
 
 Human setup, the GUI, and the interactive CLI stay in this README. Agents and scripts follow [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md): call `xsdb.cmd --json` or `./xsdb.sh --json`, parse the one JSON object on stdout, and stay on `targets`, `rd` / `jrd` / `jrd2`, and `verify` unless the user explicitly asked to write. `wr`, `jwr`, `wrd`, `jwrd`, and the `#2` write forms change the board. An `ok` of false is a stop.
 
+**L3.** An agent or CI job can enumerate targets and peek with `--json` and no board (`bash tests/test_json_cli.sh`). The Skill is what constrains writes. The optional Windows exe (`build_exe.bat` → `dist/VivadoLabReg.exe`) is the same GUI as `gui.cmd`. It is not committed, and it does not include Vivado Lab or a board profile.
+
 ---
 
 ## Packaging
 
-Optional Windows exe (not committed):
+Optional Windows GUI exe for a lab PC. The build stays on that PC. `dist/` and `*.exe` are gitignored, so this repo does not commit binaries.
+
+**Build PC** (64-bit Windows):
+
+- Python 3.10+ with tkinter (the interpreter you already use for `gui.py`)
+- PyInstaller (`pip install pyinstaller`, or let `build_exe.bat` install it)
+- `openpyxl` if that exe should open `.xlsx` (`pip install openpyxl` before the build). CSV with the same columns works without it.
 
 ```bat
 build_exe.bat
+build_exe.bat --nopause
 ```
 
-Produces `VivadoLabReg.exe` under `dist/` (gitignored). Prefer `gui.cmd` + Python for development.
+The script runs [VivadoLabReg.spec](VivadoLabReg.spec) and writes `dist\VivadoLabReg.exe`. It does not copy the exe onto the repo root. `--nopause` skips the final keypress.
 
-The GUI stores `xsdb.bat`, the optional board-profile path, and the optional address-map path in `%APPDATA%\VivadoLabReg\config.json`. The profile file stays outside the exe. Copy `profiles/example.tcl` to `profiles/private/` for a real board.
+**Inside the exe:** `gui.py`, `addr_map.py`, `gui.tcl`, `tool.tcl`, and the Python runtime. **Not inside the exe:**
+
+- Vivado Lab, `xsdb.bat`, and cable drivers. Install Lab yourself and pick `xsdb.bat` on the setup page.
+- Board profiles. Keep them in `profiles/private/` (gitignored) and point the GUI or `--profile` at that file.
+- `%APPDATA%\VivadoLabReg\config.json` (xsdb path, profile path, address-map path).
+
+`gui.cmd` runs `gui.py` when Python is installed. On a PC without Python, double-click `dist\VivadoLabReg.exe`. After you change `gui.py` or the Tcl files, run `build_exe.bat` again. Editing Tcl next to an already-built exe does not change that exe. Copy `profiles/example.tcl` to `profiles/private/` for a real board.
 
 ---
 
