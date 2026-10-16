@@ -5,12 +5,13 @@
 
 | 项 | 值 |
 |----|----|
-| 工具目录 | `.` |
-| 启动 | 双击 `VivadoLabReg.exe` 或 `gui.cmd` |
-| 板卡 | Virtex UltraScale+ FPGA |
-| 软件 | Vivado Lab 2022.2 |
-| XSDB | `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` |
+| 工具目录 | 本仓库检出（例如 `D:\lab\vivado-lab-reg`） |
+| 启动 | `gui.cmd`（有 Python 时跑源码）。打包后的 exe 是 `dist\VivadoLabReg.exe` |
+| 板卡 | 验证过 Virtex UltraScale+。其它带 MicroBlaze 和/或 JTAG-to-AXI 的 Xilinx/AMD FPGA，同样从扫描列表里选 |
+| 软件 | Vivado Lab（验证过 2022.2）。本仓不附带 |
+| XSDB | 设置页选择本机 `xsdb.bat`，例如 `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat` |
 | 地址表 | 自己的 Address Editor 导出，建议命名 `address.xlsx`（见 [地址表导入](address-map-import.md)）。仓库里的 `examples/address.xlsx` 只是虚构示例 |
+| Agent | [skills/vivado-lab-reg/SKILL.md](../skills/vivado-lab-reg/SKILL.md)。`--json` 枚举和读；写要你明确要求 |
 
 ---
 
@@ -62,39 +63,48 @@ GUI / XSDB
 1. 板子上电，bitstream 已下载。
 2. **关掉** Vivado Hardware Manager（和 GUI 抢同一条 JTAG）。
 3. 本机有 Python 3（已用 3.10 验证）和 Vivado Lab。
-4. 双击 `VivadoLabReg.exe` 或 `gui.cmd`。**先出现选择 `xsdb.bat` 的设置页**，没选到有效文件就不能进主窗口。浏览从「此电脑」打开，默认文件类型为 `*.bat`。第一次路径为空；点 **Continue** 后写入 `%APPDATA%\VivadoLabReg\config.json`，下次打开自动填入该路径。本机例子：`D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`。
+4. 双击 `gui.cmd`，或打包后的 `dist\VivadoLabReg.exe`。**先出现选择 `xsdb.bat` 的设置页**，没选到有效文件就不能进主窗口。浏览从「此电脑」打开，默认文件类型为 `*.bat`。第一次路径为空；点 **Continue** 后写入 `%APPDATA%\VivadoLabReg\config.json`，下次打开自动填入该路径。例如 `C:\Xilinx\Vivado_Lab\2022.2\bin\xsdb.bat`。
 
 ---
 
 ## 3.1 打成 exe 的前提（打包 / 运行分开）
 
+脚本是仓库里的 `build_exe.bat`，规格是 `VivadoLabReg.spec`。产物只在 `dist\VivadoLabReg.exe`，已被 gitignore，不要提交。
+
 **打包机（做一次即可）**
 
 - Windows 64 位
 - Python 3.10+（含 tkinter）
-- `pip install pyinstaller`
-- 在 `vivado_lab` 目录执行 `build_exe.bat`
+- `pip install pyinstaller`（`build_exe.bat` 发现没有时会装）
+- 若 exe 要读 `.xlsx`：先 `pip install openpyxl` 再打包。同样列名的 CSV 不需要它
+- 在仓库根目录执行 `build_exe.bat`（加 `--nopause` 可跳过最后按键）
 
-产物：`VivadoLabReg.exe`（已打进 `gui.py` / `gui.tcl` / `tool.tcl` 和 Python 运行时）。
+打进 exe 的是 `gui.py`、`addr_map.py`、`gui.tcl`、`tool.tcl` 和 Python 运行时。
+
+**不打进 exe：**
+
+- Vivado Lab、`xsdb.bat`、电缆驱动
+- `profiles/private/` 里的 board profile
+- `%APPDATA%\VivadoLabReg\config.json`（xsdb 路径、profile 路径、地址表路径）
 
 **运行机（日常连板）——不需要 Python**
 
 - Windows 64 位
-- **Vivado Lab 或完整 Vivado**（本机是 2022.2，`xsdb.bat` 必须存在）
+- **Vivado Lab 或完整 Vivado**（验证过 2022.2；`xsdb.bat` 必须存在）
 - 对应版本的 **JTAG 电缆驱动**（装 Lab 时一般已装）
 - 板子上电、bitstream 已下载
 - **不要**同时开 Hardware Manager
-- GUI 记住的 `xsdb.bat` 路径在 `%APPDATA%\VivadoLabReg\config.json`（与 exe 位置无关）
+- 双击 `dist\VivadoLabReg.exe`。配置在 `%APPDATA%\VivadoLabReg\config.json`，和 exe 放哪无关
 
-打不开或提示找不到 xsdb：先确认 Lab 已装，并在设置页选择本机的 `xsdb.bat`（例如 `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`）。
+打不开或提示找不到 xsdb：先确认 Lab 已装，并在设置页选择本机的 `xsdb.bat`（例如 `C:\Xilinx\Vivado_Lab\2022.2\bin\xsdb.bat`）。
 
-重新打包：改完 `gui.py` / `tool.tcl` 后再跑一次 `build_exe.bat`。`tool.tcl` 已打进 exe，只改目录里的 tcl **不会**自动进已生成的 exe。
+开发仍用 `gui.cmd`（有 Python 时跑源码）。改完 `gui.py` / `tool.tcl` 后再跑一次 `build_exe.bat`。已经生成的 exe 旁边改 Tcl，**不会**自动进那个 exe。
 
 ---
 
 ## 4. 窗口怎么用
 
-1. **准备。** 板上电，bitstream 已加载，关掉 Hardware Manager。设置页若还没选过，先指定 `xsdb.bat`（例如 `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat`），再点 **Continue**。
+1. **准备。** 板上电，bitstream 已加载，关掉 Hardware Manager。设置页若还没选过，先指定 `xsdb.bat`（例如 `C:\Xilinx\Vivado_Lab\2022.2\bin\xsdb.bat`），再点 **Continue**。
 2. 点 **Connect**。工具启动 XSDB，并**扫描** JTAG 链。
 3. **Targets** 列出扫到的寄存器 target（例如 MicroBlaze #0、JTAG2AXI），每行是 id 和名字，**不是写死的档位**。列表为空：确认上电并已下载 bitstream，再点 **Refresh targets**。
 4. **选中**一行。这一步只切换 XSDB target，还不需要填地址。日志会出现 `Selected … (registers not read). Enter an address for Read / Write.`
@@ -163,37 +173,25 @@ python addr_map.py --xlsx D:\lab\my-design\address.xlsx --suggest-profile
 
 ---
 
-## 6. 对照 Demo（GUI 应与直接 XSDB 一致）
+## 6. 和命令行对照（地址用虚构示例）
 
-先 **Connect**，在 **Targets** 里选好 target，再填地址。下列为某次 XSDB 实测，计数器类寄存器允许轻微变化。这些数字只是那次会话的对照，不是可复用的地址表；选地址用上一节和虚构示例 `examples/address.xlsx`。
+GUI 和 `xsdb.cmd` / `./xsdb.sh` 走同一套 `mrd` / `mwr`。先 **Connect**，在 **Targets** 里选中和命令行同一类 target，再填地址。读回值以你的 IP 手册为准，本仓不记录某块板的实测数据。
 
-**Demo 1** Targets 里选 MicroBlaze（如 MicroBlaze #0），地址 `11080000`，长度 `8`
+下面的地址来自虚构的 [`examples/address.xlsx`](../examples/address.xlsx)。真实基址以你的 Address Editor 为准，写进 `profiles/private/`，不要提交。
 
-| 地址 | 参考值 | 备注 |
-|------|--------|------|
-| `11080000` | `000F0000` | 较稳 |
-| `11080004` | `0000D8C5` | 较稳 |
-| `11080008` / `0C` | 会变 | 像计数器 |
-| `11080010` | `00000001` | 较稳 |
-| `11080014` | `00000001` | 较稳 |
-| `11080018` | `00000000` | 较稳 |
+| 步骤 | Targets 里选 | 地址 | 长度 | 说明 |
+|------|----------------|------|------|------|
+| 1 | MicroBlaze（如 MicroBlaze #0） | `10000000` | `1` | 示例里 `/example_ip_a` 的 Master Base |
+| 2 | 第一条 JTAG2AXI | `20000000` | `1` | 示例里 `/example_ip_b` 的 Lite 窗口 |
+| 3 | 另一条 JTAG2AXI | `20000000` | `1` | `j1` 和 `j2` 共用这张 Lite 表；确认选中的是哪一行 |
+| 4 | 仍是 JTAG2AXI | `10000000` | `1` | 把 MB 地址拿到 Jtag Master 上，常见 `DEC0DE1C` |
 
-**Demo 2** Targets 里选本板对应 `hw_axi_1` 的那条 JTAG2AXI，地址 `116BCC00`，长度 `4`  
-`00000000 / 00000001 / 00000001 / 00000000`
-
-**Demo 3** 仍是这一条，地址 `116B0000`，长度 `4`  
-`55AA55AA / AA55AA55 / 00000000 / 00000000`
-
-**Demo 4** Targets 里改选另一条 JTAG2AXI（本板对应 `hw_axi_2`），地址 `116BCC00`，长度 `4`  
-四个 word 均为 `0000DEAD`（说明切到了另一条 Master）
-
-**Demo 5** 仍停在 Lite 窗那条 JTAG2AXI，地址 `11080000`，长度 `1`  
-`DEC0DE1C`（MB 地址拿到 Jtag Master 上，译码失败）
-
-Windows 上重跑 XSDB 基准：
+`demo.tcl` 用的是同一组虚构基址。要对照你自己的表，只在本机改脚本，不要把真实地址提交回来。
 
 ```bat
-D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat .\demo.tcl
+xsdb.cmd demo.tcl
+xsdb.cmd rd 10000000 1
+xsdb.cmd jrd 20000000 1
 ```
 
 ---
@@ -204,7 +202,7 @@ D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat .\demo.tcl
 |------|------|
 | 稳定、符合 IP 手册 | 选中的 target 和地址都对 |
 | `DEC0DE1C` | 当前 Master 的总线上 **没有这个地址**（选错 target，或地址不在这条总线上） |
-| `0000DEAD` | 某次对照里，另一条 JTAG2AXI 的读回。不要把它当成目标从机的状态 |
+| 固定常数，和手册不符 | 多半选到了另一条 Master。回到 **Targets** 换一行再读 |
 | 写显示成功但读回不变 | 只读寄存器，或写没落到从机（再核对选中的 target） |
 | 连接失败 / 超时 | 板未上电、未下载 bit、或 Hardware Manager 占着 JTAG |
 
@@ -217,7 +215,7 @@ D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat .\demo.tcl
 同目录命令行与 GUI 走同一套 `mrd` / `mwr`（先关 Hardware Manager）。命令行用 `mb` / `jtag n` 切 target；Windows GUI 在 **Targets** 里点选扫描到的 id。
 
 ```bash
-cd /path/to/vivado_lab
+cd /lab/vivado-lab-reg
 ./xsdb.sh                # 交互，然后 mb / jtag 1 / rd / wr
 ./xsdb.sh verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
 ./xsdb.sh rd  00001000 8
@@ -258,7 +256,7 @@ xsdb.cmd --json rd 00001000 4
 xsdb.cmd --json wr 00001000 1
 ```
 
-实验机上先关 Hardware Manager，再上电、下载 bitstream。不连板的检查：`bash tests/test_json_cli.sh`。字段说明和完整示例见仓库 [README.md](../README.md) / [README.zh-CN.md](../README.zh-CN.md) 的「机器可读 JSON」。
+实验机上先关 Hardware Manager，再上电、下载 bitstream。不连板的检查：`bash tests/test_json_cli.sh`。字段说明和完整示例见仓库 [README.md](../README.md) / [README.zh-CN.md](../README.zh-CN.md) 的「机器可读 JSON」。Agent 按 [Skill](../skills/vivado-lab-reg/SKILL.md) 操作：默认只枚举和读；`wr` / `jwr` / `wrd` / `jwrd` 以及 `#2` 写只有在你明确要求时才执行。
 
 `targets` 的 `class` 为 `microblaze` 或 `jtag2axi`。空链也是合法 JSON（`ok` true，`targets` 为 `[]`）。
 
@@ -302,18 +300,21 @@ xsdb.cmd --json wr 00001000 1
 | 文件 | 用途 |
 |------|------|
 | **本文档** | Ubuntu 开发时对照、Windows 上操作 GUI |
-| `VivadoLabReg.exe` | Windows 图形界面（不需要 Python） |
-| `build_exe.bat` | 重新打包 exe |
+| [docs/README.md](README.md) | 文档索引 |
+| `dist/VivadoLabReg.exe` | `build_exe.bat` 的产物（不需要 Python；不提交） |
+| `build_exe.bat` `VivadoLabReg.spec` | 打包到 `dist/`。Vivado Lab 和 profile 不打进 exe |
 | `gui.cmd` `gui.py` `gui.tcl` | 源码启动 / 开发调试 |
 | `tool.tcl` | 真正的 `mrd`/`mwr` 逻辑 |
-| `xsdb.cmd` / `xsdb.sh` | Windows / Linux 命令行 |
-| `demo.tcl` | 与 GUI 对照的 XSDB 基准 |
+| `xsdb.cmd` / `xsdb.sh` | Windows / Linux 命令行。`--json` 给脚本和 Agent |
+| `json_cli.tcl` | `--json` 的结果形状 |
+| [skills/vivado-lab-reg/SKILL.md](../skills/vivado-lab-reg/SKILL.md) | Agent：默读；写要明确要求 |
+| `demo.tcl` | 与 GUI 对照的 XSDB 基准（虚构地址） |
 | `examples/address.xlsx` | 虚构的 Address Map 示例（参考列）。真实导出不要提交 |
 | `reg.tcl` | `verify` 批处理 |
 
 ---
 
-## 10. 本机 JTAG 链（编号会变，以当次扫描为准）
+## 10. 扫描列表示例（编号会变，以当次扫描为准）
 
 下面是某次 Virtex UltraScale+ 扫描的例子。下次连接，id 可能不同。**Targets** 显示的就是当次扫到的 id 和名字。
 
@@ -327,3 +328,9 @@ xsdb.cmd --json wr 00001000 1
 ```
 
 **Targets** 收录能做寄存器读写的 MicroBlaze 和 JTAG2AXI（Jtag Master）。点一行即选中该 id。不要把 target 编号写死进脚本；换板或换 bitstream 后点 **Refresh targets** 再选。
+
+---
+
+## 11. L3：Agent / CI 与打包
+
+人和 Agent 走同一套 target、profile 和地址表。CI 不需要板子：`bash tests/test_json_cli.sh` 用桩检查 `--json` 的枚举和 peek。实验机上 Agent 用 `xsdb.cmd --json targets` 和 `rd` / `jrd` 读寄存器。写操作（`wr`、`jwr`、`wrd`、`jwrd` 以及 `#2` 写）只有在你明确要求时才做，约束在 [Skill](../skills/vivado-lab-reg/SKILL.md)。Windows 图形界面的 exe 用 `build_exe.bat` 打到 `dist/`，不提交，也不包含 Vivado Lab。

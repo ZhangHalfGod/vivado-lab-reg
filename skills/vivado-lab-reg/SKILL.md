@@ -39,7 +39,7 @@ If the request is ambiguous ("check", "poke", "debug", "try that address"), run 
 ## Prerequisites
 
 1. Vivado Lab is installed (this repo does not ship it). XSDB talks to `hw_server` over JTAG. Validated with Vivado Lab 2022.2. Example binaries:
-   - Windows: `D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat` or `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
+   - Windows: `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat`
    - Linux: `/opt/Xilinx/Vivado_Lab/<version>/bin/xsdb`
 2. The board is powered and the bitstream is loaded, so MicroBlaze and/or JTAG-to-AXI are on the chain.
 3. Vivado Hardware Manager is closed. It holds JTAG. Connect failures say to power the board, program the bitstream, and close Hardware Manager.

@@ -83,6 +83,48 @@ class ProfileConfigTests(unittest.TestCase):
         self.assertEqual(path, good.resolve())
         self.assertIsNone(err)
 
+    def test_source_browse_uses_the_checkout(self) -> None:
+        root = Path(gui.__file__).resolve().parent
+        self.assertEqual(gui.user_tree_dir().resolve(), root)
+        self.assertEqual(
+            Path(gui.profile_browse_dir()).resolve(),
+            (root / "profiles" / "private").resolve(),
+        )
+        self.assertEqual(
+            Path(gui.address_map_browse_dir()).resolve(),
+            (root / "examples").resolve(),
+        )
+
+    def test_frozen_browse_stays_outside_the_extract_dir(self) -> None:
+        extract = self.tmp / "meipass"
+        extract.mkdir()
+        (extract / "gui.tcl").write_text("", encoding="utf-8")
+        (extract / "tool.tcl").write_text("", encoding="utf-8")
+        exe_dir = self.tmp / "dist"
+        exe_dir.mkdir()
+        private = self.tmp / "profiles" / "private"
+        private.mkdir(parents=True)
+        exe = exe_dir / "VivadoLabReg.exe"
+        exe.write_bytes(b"")
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(
+            sys, "executable", str(exe)
+        ), mock.patch.object(sys, "_MEIPASS", str(extract), create=True):
+            self.assertEqual(gui.user_tree_dir().resolve(), self.tmp.resolve())
+            self.assertEqual(Path(gui.profile_browse_dir()).resolve(), private.resolve())
+            self.assertNotIn("meipass", gui.profile_browse_dir())
+
+    def test_frozen_without_a_checkout_stays_beside_the_exe(self) -> None:
+        exe_dir = self.tmp / "alone"
+        exe_dir.mkdir()
+        exe = exe_dir / "VivadoLabReg.exe"
+        exe.write_bytes(b"")
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(
+            sys, "executable", str(exe)
+        ):
+            self.assertEqual(gui.user_tree_dir().resolve(), exe_dir.resolve())
+            self.assertEqual(Path(gui.profile_browse_dir()).resolve(), exe_dir.resolve())
+            self.assertEqual(Path(gui.address_map_browse_dir()).resolve(), exe_dir.resolve())
+
     def test_session_environ_replaces_inherited_profile(self) -> None:
         with mock.patch.dict(
             os.environ,

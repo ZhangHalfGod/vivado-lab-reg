@@ -291,6 +291,48 @@ class DocTests(unittest.TestCase):
             self.assertIn("address-map-import.md", text)
             self.assertNotIn("address_top.xlsx", text)
 
+    def test_published_text_has_no_lab_map(self) -> None:
+        paths = [
+            ROOT / "README.md",
+            ROOT / "README.zh-CN.md",
+            ROOT / "docs" / "README.md",
+            ROOT / "docs" / "usage-zh.md",
+            ROOT / "docs" / "address-map-import.md",
+            ROOT / "demo.tcl",
+            ROOT / "skills" / "vivado-lab-reg" / "SKILL.md",
+            ROOT / "gui.py",
+            ROOT / "tool.tcl",
+            ROOT / "reg.tcl",
+        ]
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for banned in BANNED:
+                self.assertNotIn(banned, text, f"{path.name} contains {banned}")
+            self.assertNotIn("vivdao_down", text, path.name)
+
+    def test_packaging_spec_stays_out_of_the_tree(self) -> None:
+        import ast
+
+        spec = (ROOT / "VivadoLabReg.spec").read_text(encoding="utf-8")
+        ast.parse(spec)
+        self.assertIn("gui.tcl", spec)
+        self.assertIn("tool.tcl", spec)
+        self.assertIn("upx=False", spec)
+        self.assertIn("console=False", spec)
+        bat = (ROOT / "build_exe.bat").read_text(encoding="utf-8")
+        self.assertIn("VivadoLabReg.spec", bat)
+        self.assertNotIn("copy /Y", bat)
+        self.assertIn("dist\\VivadoLabReg.exe", bat)
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("dist/", gitignore)
+        self.assertIn("*.exe", gitignore)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("skills/vivado-lab-reg/SKILL.md", readme)
+        self.assertIn("test_json_cli.sh", readme)
+        usage = (ROOT / "docs" / "usage-zh.md").read_text(encoding="utf-8")
+        self.assertIn("SKILL.md", usage)
+        self.assertIn("--json", usage)
+
 
 if __name__ == "__main__":
     unittest.main()

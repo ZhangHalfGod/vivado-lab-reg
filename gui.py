@@ -39,13 +39,31 @@ def resource_dir() -> Path:
 
 
 HERE = resource_dir()
+
+
+def user_tree_dir() -> Path:
+    """Checkout, or the folder that holds profiles next to a frozen exe.
+
+    ``resource_dir`` may be PyInstaller's extract directory. Profiles, the
+    example workbook, and other files the user edits stay outside the exe.
+    ``%APPDATA%\\VivadoLabReg\\config.json`` is separate from both.
+    """
+    if getattr(sys, "frozen", False):
+        exe_dir = app_dir()
+        for candidate in (exe_dir, exe_dir.parent):
+            if (candidate / "profiles").is_dir():
+                return candidate
+        return exe_dir
+    return Path(__file__).resolve().parent
+
+
 DONE = "__XSDB_DONE__"
 READY = "GUI_READY"
 HEX_RE = re.compile(r"^(?:0x)?[0-9A-Fa-f_]+$", re.I)
 MRD_RE = re.compile(r"^\s*([0-9A-Fa-f]+):\s+([0-9A-Fa-f]+)\s*$", re.I)
 TGT_RE = re.compile(r"^TGT\s+(\d+)\s+(.+)$")
 HISTORY_MAX = 100
-# History Address/Data columns: 32-bit hex, same width as 110B0000.
+# History Address/Data columns: 32-bit hex, eight digits (for example 10000000).
 HIST_HEX_WIDTH = 8
 APP_NAME = "VivadoLabReg"
 # Windows file dialog label for This PC
@@ -184,13 +202,14 @@ def session_environ(profile: Path | None) -> dict[str, str]:
 
 
 def profile_browse_dir() -> str:
-    private = HERE / "profiles" / "private"
+    root = user_tree_dir()
+    private = root / "profiles" / "private"
     if private.is_dir():
         return str(private)
-    profiles = HERE / "profiles"
+    profiles = root / "profiles"
     if profiles.is_dir():
         return str(profiles)
-    return str(HERE)
+    return str(root)
 
 
 # Address-map filter labels. Keys match addr_map.for_path ("mb" / "jtag").
@@ -217,10 +236,11 @@ def address_map_browse_dir(current: str = "") -> str:
         parent = Path(text).expanduser().parent
         if parent.is_dir():
             return str(parent)
-    examples = HERE / "examples"
+    root = user_tree_dir()
+    examples = root / "examples"
     if examples.is_dir():
         return str(examples)
-    return str(HERE)
+    return str(root)
 
 
 def private_profile_save_dir() -> str:

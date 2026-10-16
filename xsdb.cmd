@@ -16,7 +16,7 @@ if not defined XSDB (
         exit /b 1
     )
     echo ERROR: xsdb not found. Add Vivado Lab bin to PATH, or set XSDB.
-    echo Example: D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat
+    echo Example: C:\Xilinx\Vivado_Lab\2022.2\bin\xsdb.bat
     pause
     exit /b 1
 )
@@ -570,6 +570,7 @@ if defined XILINX_VIVADO if exist "%XILINX_VIVADO%\bin\xsdb.bat" (
     set "XSDB=%XILINX_VIVADO%\bin\xsdb.bat"
     goto :eof
 )
+REM Optional extra install roots. The documented example is C:\Xilinx\Vivado_Lab.
 for %%R in (D:\vivdao_down C:\Xilinx D:\Xilinx E:\Xilinx) do (
     for %%V in (2024.2 2024.1 2023.2 2023.1 2022.2 2022.1 2021.2 2021.1) do (
         if exist "%%R\Vivado_Lab\%%V\bin\xsdb.bat" (
