@@ -40,6 +40,7 @@
 - [访问路径](#访问路径)
 - [快速验证](#快速验证)
 - [命令行](#命令行)
+- [机器可读 JSON](#机器可读-json)
 - [打包](#打包)
 - [许可证](#许可证)
 
@@ -197,6 +198,135 @@ xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 ```
 
 GUI 设置页把该路径记在 `%APPDATA%\VivadoLabReg\config.json`，Connect 时传给 XSDB 会话，因此 **Verify paths** 与命令行使用同一组地址。见 [profiles/README.md](profiles/README.md)。
+
+### 机器可读 JSON
+
+`--json` 让 `xsdb.sh` / `xsdb.cmd` 在 stdout 上只打一个 JSON 对象，给脚本和 Agent 解析。不加这个参数时，给人看的文本和原来一样。参数可以写在子命令前面或后面。
+
+```bash
+./xsdb.sh --json targets
+./xsdb.sh targets --json
+./xsdb.sh --json rd 00001000 1
+./xsdb.sh --json wr 00001000 1
+./xsdb.sh --json wrd 00001000 1
+./xsdb.sh --json jrd 00002000 4
+./xsdb.sh --json jwr 00002008 1
+./xsdb.sh --json verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
+```
+
+```bat
+xsdb.cmd --json targets
+xsdb.cmd --json rd 00001000 4
+xsdb.cmd --json wr 00001000 1
+xsdb.cmd --json verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+```
+
+stdout 只有这一个对象。XSDB 横幅和其它过程信息走 stderr。`ok` 为 true 时进程退出码为 0；`ok` 为 false，或 XSDB 没有打出结果时，退出码非 0。`help` 仍是给人看的文本。
+
+`targets` 列出这次扫描到的寄存器 target（和 GUI 同一范围）：MicroBlaze 核，以及名字为 JTAG2AXI、Jtag Master、`jtag_axi` 或 jtag-to-axi 的 JTAG-to-AXI。MicroBlaze Debug Module 不算寄存器 target。`class` 为 `microblaze` 或 `jtag2axi`。id 来自当次扫描，不是写死的档位。
+
+`rd` / `wr` / `wrd` 选交互命令 `mb` 会选中的那颗 MicroBlaze（名字里有 `MicroBlaze #0` 时优先它，否则用第一颗 MicroBlaze 核）。`jrd` / `jwr` / `jwrd` 用当次扫描的第 1 条 JTAG-to-AXI；`jrd2` / `jwr2` / `jwrd2` 用第 2 条。
+
+下面这条检查不需要板子、也不需要电缆：
+
+```bash
+bash tests/test_json_cli.sh
+```
+
+实验机上先关掉 Hardware Manager，板上电并下载 bitstream，再跑上面的命令。`python3 -m json.tool` 可以把 stdout 排版后看。
+
+每个对象都有 `ok`、`command`、`operation`、`error`（成功时 `error` 为 `null`）。
+
+Targets。扫到空链也是成功（`ok` 为 true，`targets` 为 `[]`）。连接失败则 `ok` 为 false，`targets` 为 `[]`，并带上 `error`。
+
+```json
+{
+  "ok": true,
+  "command": "targets",
+  "operation": "targets",
+  "error": null,
+  "targets": [
+    {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+    {"id": 5, "name": "JTAG2AXI", "class": "jtag2axi"}
+  ]
+}
+```
+
+读、写、写后读用同一套字段。`operation` 为 `read`、`write` 或 `write_read`。`data` 是读回的字；命令本身不读时，`data` 就是写入的数据。`written` 在有写操作时是写入内容，否则为 `[]`。每个字是 `0x` 加 8 位十六进制。没有选中 target 时 `target` 为 null。
+
+```json
+{
+  "ok": true,
+  "command": "rd",
+  "operation": "read",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+  "address": "0x00001000",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": []
+}
+```
+
+```json
+{
+  "ok": true,
+  "command": "wr",
+  "operation": "write",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+  "address": "0x00001000",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": ["0x00000001"]
+}
+```
+
+```json
+{
+  "ok": true,
+  "command": "jwrd",
+  "operation": "write_read",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 5, "name": "JTAG2AXI", "class": "jtag2axi"},
+  "address": "0x00002008",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": ["0x00000001"]
+}
+```
+
+`verify` 和给人看的命令做同一组 smoke 读：MicroBlaze（`length` 10）以及扫描到的每条 JTAG-to-AXI（`length` 4）。每一项都是上面的读结果，`command` 为 `smoke` 或 `jsmoke`。Master Base 为 `0x0` 时 `skipped` 为 true，不会发 `mrd`。没有 MicroBlaze 也记为跳过。没有 JTAG-to-AXI、profile 加载失败、连接失败，或某次读失败时，最外层 `ok` 为 false。
+
+```json
+{
+  "ok": true,
+  "command": "verify",
+  "operation": "verify",
+  "error": null,
+  "results": [
+    {
+      "ok": true,
+      "command": "smoke",
+      "operation": "read",
+      "error": null,
+      "skipped": true,
+      "reason": "MB_SMOKE_ADDR is 0x0 or unset, so this read is not issued.",
+      "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+      "address": "0x00000000",
+      "length": 10,
+      "data": [],
+      "written": []
+    }
+  ]
+}
+```
 
 列出虚构的参考地址表，或打印一段 profile（抄进 `profiles/private/`；命令不会写文件）。别的表格请 [使用 AI 适配](docs/address-map-import.md)。
 

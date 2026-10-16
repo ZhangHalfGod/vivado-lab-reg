@@ -40,6 +40,7 @@ Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md).
 - [Access paths](#access-paths)
 - [Quick verify](#quick-verify)
 - [CLI](#cli)
+- [Machine-readable JSON](#machine-readable-json)
 - [Packaging](#packaging)
 - [License](#license)
 
@@ -197,6 +198,135 @@ xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 ```
 
 The GUI setup page stores that path in `%APPDATA%\VivadoLabReg\config.json` and passes it into the XSDB session on Connect, so **Verify paths** matches the CLI. See [profiles/README.md](profiles/README.md).
+
+### Machine-readable JSON
+
+`--json` makes `xsdb.sh` / `xsdb.cmd` print one JSON object on stdout for scripts and agents. Leave it off and the human text is unchanged. The flag may come before or after the command.
+
+```bash
+./xsdb.sh --json targets
+./xsdb.sh targets --json
+./xsdb.sh --json rd 00001000 1
+./xsdb.sh --json wr 00001000 1
+./xsdb.sh --json wrd 00001000 1
+./xsdb.sh --json jrd 00002000 4
+./xsdb.sh --json jwr 00002008 1
+./xsdb.sh --json verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
+```
+
+```bat
+xsdb.cmd --json targets
+xsdb.cmd --json rd 00001000 4
+xsdb.cmd --json wr 00001000 1
+xsdb.cmd --json verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+```
+
+Stdout is only that object. The XSDB banner and other chatter go to stderr. Exit status is 0 when `ok` is true, and non-zero when `ok` is false or XSDB produced no document. `help` stays human text.
+
+`targets` lists the register targets from the scan (same set as the GUI): MicroBlaze cores, and JTAG-to-AXI under the names JTAG2AXI, Jtag Master, `jtag_axi`, or jtag-to-axi. The MicroBlaze Debug Module is not included. `class` is `microblaze` or `jtag2axi`. Ids are whatever this scan returned.
+
+`rd` / `wr` / `wrd` select the MicroBlaze the interactive `mb` command would select (`MicroBlaze #0` when that name is present, otherwise the first MicroBlaze core). `jrd` / `jwr` / `jwrd` use JTAG-to-AXI #1 in that scan; `jrd2` / `jwr2` / `jwrd2` use #2.
+
+These checks do not open a cable:
+
+```bash
+bash tests/test_json_cli.sh
+```
+
+On a lab PC, close Hardware Manager, power the board, and load the bitstream before the commands above. `python3 -m json.tool` pretty-prints stdout.
+
+Every object has `ok`, `command`, `operation`, and `error` (`null` on success).
+
+Targets. An empty scan is still success (`ok` true, `targets` `[]`). Connect failure is `ok` false, `targets` `[]`, and `error` set.
+
+```json
+{
+  "ok": true,
+  "command": "targets",
+  "operation": "targets",
+  "error": null,
+  "targets": [
+    {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+    {"id": 5, "name": "JTAG2AXI", "class": "jtag2axi"}
+  ]
+}
+```
+
+Read, write, and write-then-read share one shape. `operation` is `read`, `write`, or `write_read`. `data` is the words read back, or the write payload when the command does not read. `written` is that payload when the command writes, otherwise `[]`. Words look like `0x` plus eight hex digits. `target` is null when nothing was selected.
+
+```json
+{
+  "ok": true,
+  "command": "rd",
+  "operation": "read",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+  "address": "0x00001000",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": []
+}
+```
+
+```json
+{
+  "ok": true,
+  "command": "wr",
+  "operation": "write",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+  "address": "0x00001000",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": ["0x00000001"]
+}
+```
+
+```json
+{
+  "ok": true,
+  "command": "jwrd",
+  "operation": "write_read",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 5, "name": "JTAG2AXI", "class": "jtag2axi"},
+  "address": "0x00002008",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": ["0x00000001"]
+}
+```
+
+`verify` runs the same smoke reads as the human command: MicroBlaze (`length` 10) and each JTAG-to-AXI the scan found (`length` 4). Each entry uses the read shape, with `command` `smoke` or `jsmoke`. A Master Base of `0x0` sets `skipped` true and does not call `mrd`. A missing MicroBlaze is skipped. No JTAG-to-AXI, a profile that failed to load, a connect failure, or a failed read sets top-level `ok` to false.
+
+```json
+{
+  "ok": true,
+  "command": "verify",
+  "operation": "verify",
+  "error": null,
+  "results": [
+    {
+      "ok": true,
+      "command": "smoke",
+      "operation": "read",
+      "error": null,
+      "skipped": true,
+      "reason": "MB_SMOKE_ADDR is 0x0 or unset, so this read is not issued.",
+      "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+      "address": "0x00000000",
+      "length": 10,
+      "data": [],
+      "written": []
+    }
+  ]
+}
+```
 
 List the fictional reference map, or print a profile snippet (copy it into `profiles/private/`; the command does not write the file). Other spreadsheet layouts: [use AI to adapt](docs/address-map-import.md).
 
