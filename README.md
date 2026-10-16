@@ -41,6 +41,7 @@ Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md).
 - [Quick verify](#quick-verify)
 - [CLI](#cli)
 - [Machine-readable JSON](#machine-readable-json)
+- [Agents / Skill](#agents--skill)
 - [Packaging](#packaging)
 - [License](#license)
 
@@ -334,6 +335,10 @@ List the fictional reference map, or print a profile snippet (copy it into `prof
 python addr_map.py D:\lab\vivado-lab-reg\examples\address.xlsx
 python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-profile
 ```
+
+### Agents / Skill
+
+Human setup, the GUI, and the interactive CLI stay in this README. Agents and scripts follow [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md): call `xsdb.cmd --json` or `./xsdb.sh --json`, parse the one JSON object on stdout, and stay on `targets`, `rd` / `jrd` / `jrd2`, and `verify` unless the user explicitly asked to write. `wr`, `jwr`, `wrd`, `jwrd`, and the `#2` write forms change the board. An `ok` of false is a stop.
 
 ---
 
