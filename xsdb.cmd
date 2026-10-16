@@ -2,8 +2,19 @@
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
+REM --json anywhere selects one JSON document on stdout. Detect it before
+REM the xsdb search so a missing toolchain still prints JSON.
+set "JSON=0"
+if "%~1"=="" goto FIND_XSDB
+for %%A in (%*) do if /i "%%~A"=="--json" set "JSON=1"
+:FIND_XSDB
+
 call :find_xsdb
 if not defined XSDB (
+    if "%JSON%"=="1" (
+        echo {"ok":false,"command":"xsdb","operation":"error","error":"xsdb not found. Add Vivado Lab bin to PATH, or set XSDB.","targets":[]}
+        exit /b 1
+    )
     echo ERROR: xsdb not found. Add Vivado Lab bin to PATH, or set XSDB.
     echo Example: D:\vivdao_down\Vivado_Lab\2022.2\bin\xsdb.bat
     pause
@@ -14,41 +25,68 @@ set "HERE=%~dp0"
 set "HERE=%HERE:\=/%"
 if "%HERE:~-1%"=="/" set "HERE=%HERE:~0,-1%"
 
-REM --profile <file.tcl> before the command:
-REM   xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
-REM   xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl verify
-if /i "%~1"=="--profile" goto LEADING_PROFILE
-goto AFTER_LEADING_PROFILE
-:LEADING_PROFILE
-if "%~2"=="" (
-    echo ERROR: --profile needs a .tcl board profile.
-    echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+REM --profile and --json may appear before the command or after it.
+set "PN=0"
+set "P1="
+set "P2="
+set "P3="
+set "P4="
+
+:PARSE_ARGS
+if "%~1"=="" goto PARSE_DONE
+if /i "%~1"=="--json" (
+    set "JSON=1"
+    shift
+    goto PARSE_ARGS
+)
+if /i "%~1"=="--profile" (
+    if "%~2"=="" goto PROFILE_NEEDS_ARG
+    set "VIVADO_LAB_REG_PROFILE=%~2"
+    shift
+    shift
+    goto PARSE_ARGS
+)
+set /a PN+=1
+if !PN! EQU 1 set "P1=%~1"
+if !PN! EQU 2 set "P2=%~1"
+if !PN! EQU 3 set "P3=%~1"
+if !PN! EQU 4 set "P4=%~1"
+shift
+goto PARSE_ARGS
+
+:PARSE_DONE
+if "%P1%"=="" goto INTERACTIVE
+if /i "%P1%"=="help" goto USAGE
+if /i "%P1%"=="-h" goto USAGE
+if /i "%P1%"=="/?" goto USAGE
+if /i "%P1%"=="verify" goto VERIFY
+if /i "%P1%"=="targets" goto TARGETS
+if /i "%P1%"=="rd" goto RD
+if /i "%P1%"=="wr" goto WR
+if /i "%P1%"=="wrd" goto WRD
+if /i "%P1%"=="jrd" goto JRD
+if /i "%P1%"=="jrd2" goto JRD2
+if /i "%P1%"=="jwr" goto JWR
+if /i "%P1%"=="jwr2" goto JWR2
+if /i "%P1%"=="jwrd" goto JWRD
+if /i "%P1%"=="jwrd2" goto JWRD2
+if /i "%P1%"=="interactive" goto INTERACTIVE
+
+if "%JSON%"=="1" (
+    call :JSON_EARLY %P1% %P1% "Unknown command: %P1%" targets
     exit /b 1
 )
-set "VIVADO_LAB_REG_PROFILE=%~2"
-shift
-shift
-:AFTER_LEADING_PROFILE
-
-if "%~1"=="" goto INTERACTIVE
-if /i "%~1"=="help" goto USAGE
-if /i "%~1"=="-h" goto USAGE
-if /i "%~1"=="/?" goto USAGE
-if /i "%~1"=="verify" goto VERIFY
-if /i "%~1"=="targets" goto TARGETS
-if /i "%~1"=="rd" goto RD
-if /i "%~1"=="wr" goto WR
-if /i "%~1"=="wrd" goto WRD
-if /i "%~1"=="jrd" goto JRD
-if /i "%~1"=="jrd2" goto JRD2
-if /i "%~1"=="jwr" goto JWR
-if /i "%~1"=="jwr2" goto JWR2
-if /i "%~1"=="jwrd" goto JWRD
-if /i "%~1"=="jwrd2" goto JWRD2
-if /i "%~1"=="interactive" goto INTERACTIVE
-
-echo Unknown command: %~1
+echo Unknown command: %P1%
 goto USAGE
+
+:PROFILE_NEEDS_ARG
+if "%JSON%"=="1" (
+    call :JSON_EARLY xsdb error "--profile needs a .tcl board profile." targets
+    exit /b 1
+)
+echo ERROR: --profile needs a .tcl board profile.
+echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
+exit /b 1
 
 :USAGE
 echo.
@@ -73,6 +111,7 @@ echo    xsdb.cmd jrd2 ^<addr^> [len]     JTAG2AXI #2
 echo    xsdb.cmd jwr  ^<addr^> ^<data^>
 echo    xsdb.cmd jwr2 ^<addr^> ^<data^>
 echo    xsdb.cmd jwrd ^<addr^> ^<data^>
+echo    --json                   one JSON object on stdout
 echo.
 echo  Board profile ^(Master Base Address^), optional:
 echo    --profile ^<file.tcl^>   source before tool.tcl
@@ -84,28 +123,28 @@ echo    xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.t
 echo    xsdb.cmd rd   00001000 10
 echo    xsdb.cmd jrd  00002000 4
 echo    xsdb.cmd jwr  00002008 1
+echo    xsdb.cmd --json targets
+echo    xsdb.cmd --json rd 00001000 4
+echo    xsdb.cmd --json wr 00001000 1
+echo    xsdb.cmd --json verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
 echo.
-if "%~1"=="" exit /b 0
-if /i "%~1"=="help" exit /b 0
+if "%P1%"=="" exit /b 0
+if /i "%P1%"=="help" exit /b 0
+if /i "%P1%"=="-h" exit /b 0
+if /i "%P1%"=="/?" exit /b 0
 pause
 exit /b 1
 
 :INTERACTIVE
-if /i "%~2"=="--profile" goto INTERACTIVE_PROFILE
-if not "%~2"=="" (
-    echo Unknown argument: %~2
+if "%JSON%"=="1" (
+    call :JSON_EARLY interactive error "interactive has no JSON result. Use targets, rd, wr, wrd, jrd, jwr, jwrd, or verify." mem
+    exit /b 1
+)
+if not "%P2%"=="" (
+    echo Unknown argument: %P2%
     echo Usage: xsdb.cmd [--profile file.tcl]
     exit /b 1
 )
-goto INTERACTIVE_RUN
-:INTERACTIVE_PROFILE
-if "%~3"=="" (
-    echo ERROR: --profile needs a .tcl board profile.
-    echo Example: xsdb.cmd --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
-    exit /b 1
-)
-set "VIVADO_LAB_REG_PROFILE=%~3"
-:INTERACTIVE_RUN
 echo.
 echo  XSDB: JTAG -^> MicroBlaze  and  JTAG -^> Jtag Master
 echo  script: %~dp0tool.tcl
@@ -117,124 +156,401 @@ if errorlevel 1 pause
 exit /b %ERRORLEVEL%
 
 :VERIFY
-if /i "%~2"=="--profile" goto VERIFY_PROFILE
-if not "%~2"=="" (
-    echo Unknown argument: %~2
+if "%JSON%"=="1" goto VERIFY_JSON
+if not "%P2%"=="" (
+    echo Unknown argument: %P2%
     echo Usage: xsdb.cmd verify [--profile file.tcl]
     echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
     exit /b 1
 )
-goto VERIFY_RUN
-:VERIFY_PROFILE
-if "%~3"=="" (
-    echo ERROR: --profile needs a .tcl board profile.
-    echo Example: xsdb.cmd verify --profile D:\lab\vivado-lab-reg\profiles\private\board.tcl
-    exit /b 1
-)
-if not "%~4"=="" (
-    echo Unknown argument: %~4
-    echo Usage: xsdb.cmd verify [--profile file.tcl]
-    exit /b 1
-)
-set "VIVADO_LAB_REG_PROFILE=%~3"
-:VERIFY_RUN
 echo verify both paths: %~dp0reg.tcl
 if defined VIVADO_LAB_REG_PROFILE echo board profile: "%VIVADO_LAB_REG_PROFILE%"
 "%XSDB%" "%~dp0reg.tcl"
 if errorlevel 1 pause
 exit /b %ERRORLEVEL%
 
+:VERIFY_JSON
+if not "%P2%"=="" (
+    call :JSON_EARLY verify verify "Unknown argument: %P2%" verify
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main verify" verify verify verify
+exit /b %ERRORLEVEL%
+
 :TARGETS
+if "%JSON%"=="1" goto TARGETS_JSON
 "%XSDB%" -eval "connect; targets; exit"
 if errorlevel 1 pause
 exit /b %ERRORLEVEL%
 
+:TARGETS_JSON
+if not "%P2%"=="" (
+    call :JSON_EARLY targets targets "Unknown argument: %P2%" targets
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main targets" targets targets targets
+exit /b %ERRORLEVEL%
+
 :RD
-if "%~2"=="" (
+if "%P2%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY rd read "Missing addr. Example: xsdb.cmd rd 00001000 10" mem
+        exit /b 1
+    )
     echo Missing addr. Example: xsdb.cmd rd 00001000 10
     exit /b 1
 )
-set "LEN=%~3"
+set "LEN=%P3%"
 if "%LEN%"=="" set "LEN=1"
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {rd %~2 %LEN%}; exit"
+if "%JSON%"=="1" goto RD_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {rd %P2% %LEN%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:RD_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY rd read "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY rd read "bad address: %P2%" mem
+    exit /b 1
+)
+call :LEN_OK "%LEN%"
+if errorlevel 1 (
+    call :JSON_EARLY rd read "length must be a positive integer" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main read {%P2%} {%LEN%} mb 0 rd" rd read mem
 exit /b %ERRORLEVEL%
 
 :WR
-if "%~3"=="" (
+if "%P3%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY wr write "Missing args. Example: xsdb.cmd wr 00001000 12345678" mem
+        exit /b 1
+    )
     echo Missing args. Example: xsdb.cmd wr 00001000 12345678
     exit /b 1
 )
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {wr %~2 %~3}; exit"
+if "%JSON%"=="1" goto WR_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {wr %P2% %P3%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:WR_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY wr write "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY wr write "bad address: %P2%" mem
+    exit /b 1
+)
+call :HEX_OK "%P3%"
+if errorlevel 1 (
+    call :JSON_EARLY wr write "bad data: %P3%" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main write {%P2%} {%P3%} mb 0 wr" wr write mem
 exit /b %ERRORLEVEL%
 
 :WRD
-if "%~3"=="" (
+if "%P3%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY wrd write_read "Missing args. Example: xsdb.cmd wrd 00001000 1" mem
+        exit /b 1
+    )
     echo Missing args. Example: xsdb.cmd wrd 00001000 1
     exit /b 1
 )
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {wrd %~2 %~3}; exit"
+if "%JSON%"=="1" goto WRD_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; mb; catch {wrd %P2% %P3%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:WRD_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY wrd write_read "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY wrd write_read "bad address: %P2%" mem
+    exit /b 1
+)
+call :HEX_OK "%P3%"
+if errorlevel 1 (
+    call :JSON_EARLY wrd write_read "bad data: %P3%" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main write_read {%P2%} {%P3%} mb 0 wrd" wrd write_read mem
 exit /b %ERRORLEVEL%
 
 :JRD
-if "%~2"=="" (
+if "%P2%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY jrd read "Missing addr. Example: xsdb.cmd jrd 00002000 4" mem
+        exit /b 1
+    )
     echo Missing addr. Example: xsdb.cmd jrd 00002000 4
     exit /b 1
 )
-set "LEN=%~3"
+set "LEN=%P3%"
 if "%LEN%"=="" set "LEN=1"
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {rd %~2 %LEN%}; exit"
+if "%JSON%"=="1" goto JRD_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {rd %P2% %LEN%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:JRD_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY jrd read "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY jrd read "bad address: %P2%" mem
+    exit /b 1
+)
+call :LEN_OK "%LEN%"
+if errorlevel 1 (
+    call :JSON_EARLY jrd read "length must be a positive integer" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main read {%P2%} {%LEN%} jtag 1 jrd" jrd read mem
 exit /b %ERRORLEVEL%
 
 :JRD2
-if "%~2"=="" (
+if "%P2%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY jrd2 read "Missing addr. Example: xsdb.cmd jrd2 00002000 4" mem
+        exit /b 1
+    )
     echo Missing addr. Example: xsdb.cmd jrd2 00002000 4
     exit /b 1
 )
-set "LEN=%~3"
+set "LEN=%P3%"
 if "%LEN%"=="" set "LEN=1"
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {rd %~2 %LEN%}; exit"
+if "%JSON%"=="1" goto JRD2_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {rd %P2% %LEN%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:JRD2_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY jrd2 read "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY jrd2 read "bad address: %P2%" mem
+    exit /b 1
+)
+call :LEN_OK "%LEN%"
+if errorlevel 1 (
+    call :JSON_EARLY jrd2 read "length must be a positive integer" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main read {%P2%} {%LEN%} jtag 2 jrd2" jrd2 read mem
 exit /b %ERRORLEVEL%
 
 :JWR
-if "%~3"=="" (
+if "%P3%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY jwr write "Missing args. Example: xsdb.cmd jwr 00002008 1" mem
+        exit /b 1
+    )
     echo Missing args. Example: xsdb.cmd jwr 00002008 1
     exit /b 1
 )
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {wr %~2 %~3}; exit"
+if "%JSON%"=="1" goto JWR_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {wr %P2% %P3%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:JWR_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY jwr write "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY jwr write "bad address: %P2%" mem
+    exit /b 1
+)
+call :HEX_OK "%P3%"
+if errorlevel 1 (
+    call :JSON_EARLY jwr write "bad data: %P3%" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main write {%P2%} {%P3%} jtag 1 jwr" jwr write mem
 exit /b %ERRORLEVEL%
 
 :JWR2
-if "%~3"=="" (
+if "%P3%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY jwr2 write "Missing args. Example: xsdb.cmd jwr2 00002008 1" mem
+        exit /b 1
+    )
     echo Missing args. Example: xsdb.cmd jwr2 00002008 1
     exit /b 1
 )
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {wr %~2 %~3}; exit"
+if "%JSON%"=="1" goto JWR2_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {wr %P2% %P3%}; exit"
 if errorlevel 1 pause
+exit /b %ERRORLEVEL%
+
+:JWR2_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY jwr2 write "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY jwr2 write "bad address: %P2%" mem
+    exit /b 1
+)
+call :HEX_OK "%P3%"
+if errorlevel 1 (
+    call :JSON_EARLY jwr2 write "bad data: %P3%" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main write {%P2%} {%P3%} jtag 2 jwr2" jwr2 write mem
 exit /b %ERRORLEVEL%
 
 :JWRD
-if "%~3"=="" (
+if "%P3%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY jwrd write_read "Missing args. Example: xsdb.cmd jwrd 00002008 1" mem
+        exit /b 1
+    )
     echo Missing args. Example: xsdb.cmd jwrd 00002008 1
     exit /b 1
 )
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {wrd %~2 %~3}; exit"
+if "%JSON%"=="1" goto JWRD_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 1; catch {wrd %P2% %P3%}; exit"
 if errorlevel 1 pause
 exit /b %ERRORLEVEL%
 
+:JWRD_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY jwrd write_read "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY jwrd write_read "bad address: %P2%" mem
+    exit /b 1
+)
+call :HEX_OK "%P3%"
+if errorlevel 1 (
+    call :JSON_EARLY jwrd write_read "bad data: %P3%" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main write_read {%P2%} {%P3%} jtag 1 jwrd" jwrd write_read mem
+exit /b %ERRORLEVEL%
+
 :JWRD2
-if "%~3"=="" (
+if "%P3%"=="" (
+    if "%JSON%"=="1" (
+        call :JSON_EARLY jwrd2 write_read "Missing args. Example: xsdb.cmd jwrd2 00002008 1" mem
+        exit /b 1
+    )
     echo Missing args. Example: xsdb.cmd jwrd2 00002008 1
     exit /b 1
 )
-"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {wrd %~2 %~3}; exit"
+if "%JSON%"=="1" goto JWRD2_JSON
+"%XSDB%" -eval "set ::XSDB_QUIET 1; source {%HERE%/tool.tcl}; xconnect; jtag 2; catch {wrd %P2% %P3%}; exit"
 if errorlevel 1 pause
 exit /b %ERRORLEVEL%
+
+:JWRD2_JSON
+if not "%P4%"=="" (
+    call :JSON_EARLY jwrd2 write_read "Unknown argument: %P4%" mem
+    exit /b 1
+)
+call :HEX_OK "%P2%"
+if errorlevel 1 (
+    call :JSON_EARLY jwrd2 write_read "bad address: %P2%" mem
+    exit /b 1
+)
+call :HEX_OK "%P3%"
+if errorlevel 1 (
+    call :JSON_EARLY jwrd2 write_read "bad data: %P3%" mem
+    exit /b 1
+)
+call :RUN_JSON "json_cli_main write_read {%P2%} {%P3%} jtag 2 jwrd2" jwrd2 write_read mem
+exit /b %ERRORLEVEL%
+
+:RUN_JSON
+set "JSON_SCRIPT=%~1"
+set "JSON_CMD=%~2"
+set "JSON_OP=%~3"
+set "JSON_KIND=%~4"
+set "JSON_FILE=%TEMP%\vivado-lab-reg-%RANDOM%.json"
+set "JSON_LOG=%TEMP%\vivado-lab-reg-%RANDOM%.log"
+set "VIVADO_LAB_REG_JSON=1"
+set "VIVADO_LAB_REG_JSON_FILE=%JSON_FILE%"
+call "%XSDB%" -eval "set ::XSDB_QUIET 1; set ::XSDB_JSON 1; source {%HERE%/tool.tcl}; %JSON_SCRIPT%" > "%JSON_LOG%" 2>&1
+set "JSON_RC=%ERRORLEVEL%"
+if exist "%JSON_FILE%" goto JSON_HAS_FILE
+call :JSON_EARLY %JSON_CMD% %JSON_OP% "xsdb produced no JSON result" %JSON_KIND%
+del /q "%JSON_LOG%" >nul 2>&1
+exit /b 1
+
+:JSON_HAS_FILE
+for /f "usebackq delims=" %%L in ("%JSON_LOG%") do call :JSON_LOG_LINE "%%L"
+type "%JSON_FILE%"
+del /q "%JSON_FILE%" "%JSON_LOG%" >nul 2>&1
+exit /b %JSON_RC%
+
+:JSON_LOG_LINE
+echo %~1| findstr /b /c:"VIVADO_LAB_REG_JSON " >nul
+if errorlevel 1 echo %~1 1>&2
+exit /b 0
+
+:JSON_EARLY
+set "JC=%~1"
+set "JO=%~2"
+set "JE=%~3"
+set "JK=%~4"
+set JE=!JE:"=!
+if /i "!JK!"=="targets" (
+    echo {"ok":false,"command":"!JC!","operation":"!JO!","error":"!JE!","targets":[]}
+    exit /b 0
+)
+if /i "!JK!"=="verify" (
+    echo {"ok":false,"command":"!JC!","operation":"!JO!","error":"!JE!","results":[]}
+    exit /b 0
+)
+echo {"ok":false,"command":"!JC!","operation":"!JO!","error":"!JE!","skipped":false,"reason":null,"target":null,"address":null,"length":null,"data":[],"written":[]}
+exit /b 0
+
+:HEX_OK
+set "VAL=%~1"
+if "!VAL!"=="" exit /b 1
+set "TEST=!VAL!"
+for %%C in (0 1 2 3 4 5 6 7 8 9 A B C D E F a b c d e f x X _) do set "TEST=!TEST:%%C=!"
+if not "!TEST!"=="" exit /b 1
+exit /b 0
+
+:LEN_OK
+set "VAL=%~1"
+if "!VAL!"=="" exit /b 1
+set "TEST=!VAL!"
+for %%C in (0 1 2 3 4 5 6 7 8 9) do set "TEST=!TEST:%%C=!"
+if not "!TEST!"=="" exit /b 1
+set "NZ=!VAL!"
+:LEN_STRIP
+if "!NZ!"=="" exit /b 1
+if "!NZ:~0,1!"=="0" (
+    set "NZ=!NZ:~1!"
+    goto LEN_STRIP
+)
+exit /b 0
 
 :find_xsdb
 if defined XSDB if exist "%XSDB%" goto :eof

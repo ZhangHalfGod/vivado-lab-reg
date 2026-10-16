@@ -239,6 +239,62 @@ Windows 命令行：`xsdb.cmd` 参数相同。
 | `wr <addr> <data>` | 写 |
 | `wrd <addr> <data>` | 写完读回 |
 
+### 8.1 `--json`（给脚本 / Agent）
+
+不加 `--json` 时输出和原来一样。加上之后，stdout 只有一个 JSON 对象，XSDB 横幅走 stderr。`ok` 为 true 退出码 0，否则非 0。参数可以写在子命令前或后。id 来自当次扫描，不要写死。
+
+```bash
+./xsdb.sh --json targets
+./xsdb.sh --json rd 00001000 1
+./xsdb.sh --json wr 00001000 1
+./xsdb.sh --json wrd 00001000 1
+./xsdb.sh --json jrd 00002000 4
+./xsdb.sh --json verify --profile /lab/vivado-lab-reg/profiles/private/board.tcl
+```
+
+```bat
+xsdb.cmd --json targets
+xsdb.cmd --json rd 00001000 4
+xsdb.cmd --json wr 00001000 1
+```
+
+实验机上先关 Hardware Manager，再上电、下载 bitstream。不连板的检查：`bash tests/test_json_cli.sh`。字段说明和完整示例见仓库 [README.md](../README.md) / [README.zh-CN.md](../README.zh-CN.md) 的「机器可读 JSON」。
+
+`targets` 的 `class` 为 `microblaze` 或 `jtag2axi`。空链也是合法 JSON（`ok` true，`targets` 为 `[]`）。
+
+```json
+{
+  "ok": true,
+  "command": "targets",
+  "operation": "targets",
+  "error": null,
+  "targets": [
+    {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+    {"id": 5, "name": "JTAG2AXI", "class": "jtag2axi"}
+  ]
+}
+```
+
+读 / 写共用 `ok`、`command`、`operation`、`error`、`target`、`address`、`length`、`data`。`data` 是读回值；纯写时 `data` 是写入内容。`written` 在有写时为写入内容，否则为 `[]`。
+
+```json
+{
+  "ok": true,
+  "command": "rd",
+  "operation": "read",
+  "error": null,
+  "skipped": false,
+  "reason": null,
+  "target": {"id": 3, "name": "MicroBlaze #0", "class": "microblaze"},
+  "address": "0x00001000",
+  "length": 1,
+  "data": ["0x00000001"],
+  "written": []
+}
+```
+
+`verify` 的 `results` 里每一项都是这种读结果（`command` 为 `smoke` 或 `jsmoke`）。地址为 `0x0` 时 `skipped` 为 true，不发 `mrd`。
+
 ---
 
 ## 9. 目录文件

@@ -10,6 +10,10 @@
 # GUI scan (gui.py), no fixed path slots:
 #   gui_connect / enum_targets  ->  TGT <id> <name>
 #   select_id <id>              ->  targets <id>, then rd / wr / wrd
+#
+# Machine-readable CLI (json_cli.tcl, same directory):
+#   xsdb.sh --json targets | rd | wr | wrd | jrd | jwr | jwrd | verify
+#   xsdb.cmd --json ...
 
 # Smoke addresses come from a board profile (Master Base Address).
 #   xsdb.cmd verify --profile <file.tcl>
@@ -506,6 +510,13 @@ proc help_xsdb {} {
     puts "  MB_SMOKE_ADDR=$::MB_SMOKE_ADDR  JTAG_SMOKE_ADDR=$::JTAG_SMOKE_ADDR"
     puts "  targets               list JTAG targets"
     puts "  help_xsdb             this help"
+}
+
+set _json_cli_path [file join $::TOOL_TCL_DIR json_cli.tcl]
+if {[file isfile $_json_cli_path]} {
+    source $_json_cli_path
+} elseif {[info exists ::XSDB_JSON] && $::XSDB_JSON} {
+    puts stderr "ERROR: json_cli.tcl not found next to tool.tcl"
 }
 
 load_board_profile
