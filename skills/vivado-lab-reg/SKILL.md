@@ -11,7 +11,7 @@ description: >-
 
 # vivado-lab-reg JSON CLI
 
-Agents and scripts call `xsdb.cmd` or `./xsdb.sh` with `--json`, then parse one JSON object from stdout. The human walkthrough (GUI, interactive CLI, board prep) is [README.md](../../README.md), [README.zh-CN.md](../../README.zh-CN.md), and [docs/usage-zh.md](../../docs/usage-zh.md).
+Agents and scripts call `xsdb.cmd` or `./xsdb.sh` with `--json`, then parse one JSON object from stdout. The human walkthrough (GUI, interactive CLI, board prep) is [README.md](../../README.md), [README.zh-CN.md](../../README.zh-CN.md), and [docs/usage-zh.md](../../docs/usage-zh.md). A human testing this Skill with a local Cursor Agent follows [Local Cursor Agent](../../README.md#local-cursor-agent) or [本机 Cursor Agent](../../README.zh-CN.md#本机-cursor-agent).
 
 ## Safety
 

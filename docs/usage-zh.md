@@ -11,7 +11,7 @@
 | 软件 | Vivado Lab（验证过 2022.2）。本仓不附带 |
 | XSDB | 设置页选择本机 `xsdb.bat`，例如 `C:\Xilinx\Vivado_Lab\<version>\bin\xsdb.bat` |
 | 地址表 | 自己的 Address Editor 导出，建议命名 `address.xlsx`（见 [地址表导入](address-map-import.md)）。仓库里的 `examples/address.xlsx` 只是虚构示例 |
-| Agent | [skills/vivado-lab-reg/SKILL.md](../skills/vivado-lab-reg/SKILL.md)。`--json` 枚举和读；写要你明确要求 |
+| Agent | [skills/vivado-lab-reg/SKILL.md](../skills/vivado-lab-reg/SKILL.md)。本机试用见 [本机 Cursor Agent](#本机-cursor-agent)。`--json` 枚举和读；写要你明确要求 |
 
 ---
 
@@ -256,7 +256,7 @@ xsdb.cmd --json rd 00001000 4
 xsdb.cmd --json wr 00001000 1
 ```
 
-实验机上先关 Hardware Manager，再上电、下载 bitstream。不连板的检查：`bash tests/test_json_cli.sh`。字段说明和完整示例见仓库 [README.md](../README.md) / [README.zh-CN.md](../README.zh-CN.md) 的「机器可读 JSON」。Agent 按 [Skill](../skills/vivado-lab-reg/SKILL.md) 操作：默认只枚举和读；`wr` / `jwr` / `wrd` / `jwrd` 以及 `#2` 写只有在你明确要求时才执行。
+实验机上先关 Hardware Manager，再上电、下载 bitstream。不连板的检查：`bash tests/test_json_cli.sh`。字段说明和完整示例见仓库 [README.md](../README.md) / [README.zh-CN.md](../README.zh-CN.md) 的「机器可读 JSON」。Agent 按 [Skill](../skills/vivado-lab-reg/SKILL.md) 操作：默认只枚举和读；`wr` / `jwr` / `wrd` / `jwrd` 以及 `#2` 写只有在你明确要求时才执行。本机 Cursor Agent 的步骤见 [本机 Cursor Agent](#本机-cursor-agent)。
 
 `targets` 的 `class` 为 `microblaze` 或 `jtag2axi`。空链也是合法 JSON（`ok` true，`targets` 为 `[]`）。
 
@@ -334,3 +334,17 @@ xsdb.cmd --json wr 00001000 1
 ## 11. L3：Agent / CI 与打包
 
 人和 Agent 走同一套 target、profile 和地址表。CI 不需要板子：`bash tests/test_json_cli.sh` 用桩检查 `--json` 的枚举和 peek。实验机上 Agent 用 `xsdb.cmd --json targets` 和 `rd` / `jrd` 读寄存器。写操作（`wr`、`jwr`、`wrd`、`jwrd` 以及 `#2` 写）只有在你明确要求时才做，约束在 [Skill](../skills/vivado-lab-reg/SKILL.md)。Windows 图形界面的 exe 用 `build_exe.bat` 打到 `dist/`，不提交，也不包含 Vivado Lab。
+
+### 本机 Cursor Agent
+
+在实验机上用 Cursor 打开本检出，让本机 Agent 按 Skill 走下面六步。英文全文在 [Local Cursor Agent](../README.md#local-cursor-agent)，中文全文在 [本机 Cursor Agent](../README.zh-CN.md#本机-cursor-agent)。
+
+1. **打开检出。** 例子是 `D:\lab\vivado-lab-reg`。用你自己的目录也可以，工作区要是这个检出。
+2. **Skill 文件**是 `skills/vivado-lab-reg/SKILL.md`。Agent 必须读到它：把检出当工作区并让它按仓库里的 `vivado-lab-reg` skill 做，或把该文件附到对话，或在提示里写明先读这个文件并照它做。
+3. **板子准备不变。** 板上电，bitstream 已加载，关掉 Hardware Manager。
+4. **示例提示**，一次一条。地址换成你要看的寄存器；下面是文档里的虚构数。第三条会改寄存器，打算写再发。
+   - 只枚举：`读 skills/vivado-lab-reg/SKILL.md 并照它做。只跑 targets。列出 id、name、class。不要读寄存器，不要写。`
+   - 只读：`按 skills/vivado-lab-reg/SKILL.md 做。在 MicroBlaze 上读 0x00001000 起的 4 个字。只读。`
+   - 写：提示里同时给出地址和数据，例如 `按 skills/vivado-lab-reg/SKILL.md 做。把 0x00000001 写到 MicroBlaze 地址 0x00001000。` 缺地址或缺数据时保持只读。
+5. **Agent 应执行的命令。** 在检出目录里跑 `xsdb.cmd --json …`（Linux 为 `./xsdb.sh --json …`），解析 stdout 上的那一个 JSON。`ok` 为 false 就停，报告 `error`，不重试，也不接着写。
+6. **不连板。** `bash tests/test_json_cli.sh`。第 4 步的实机提示仍要先做第 3 步。

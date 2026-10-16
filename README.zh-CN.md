@@ -27,7 +27,7 @@
 4. **交互。** `xsdb.cmd` 后 `mb` / `jtag 1` / `smoke` / `rd` / `wr`。[命令行](#命令行)
 5. **换板。** 点 **Refresh targets** 再重新选择；smoke 基址用 profile 换掉。[原理与板型适配](#原理与板型适配)
 
-更细的中文 GUI 说明：[docs/usage-zh.md](docs/usage-zh.md)。文档索引：[docs/README.md](docs/README.md)。
+更细的中文 GUI 说明：[docs/usage-zh.md](docs/usage-zh.md)。文档索引：[docs/README.md](docs/README.md)。本机 Cursor Agent 试用 Skill：[本机 Cursor Agent](#本机-cursor-agent)。
 
 ---
 
@@ -42,6 +42,7 @@
 - [命令行](#命令行)
 - [机器可读 JSON](#机器可读-json)
 - [Agents / Skill](#agents--skill)
+  - [本机 Cursor Agent](#本机-cursor-agent)
 - [打包](#打包)
 - [许可证](#许可证)
 
@@ -341,6 +342,39 @@ python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-
 给人看的准备步骤、图形界面和交互命令行仍以本 README 为准。Agent 和脚本按 [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md) 操作：调用 `xsdb.cmd --json` 或 `./xsdb.sh --json`，解析 stdout 上的那一个 JSON 对象，默认只跑 `targets`、`rd` / `jrd` / `jrd2` 和 `verify`。只有用户明确要求写入时，才使用 `wr`、`jwr`、`wrd`、`jwrd` 以及对应的 `#2` 写命令。这些写命令会改板上的寄存器。`ok` 为 false 就停。
 
 **L3。** Agent 或 CI 可以在没有板子的情况下用 `--json` 枚举 target 并读寄存器（`bash tests/test_json_cli.sh`）。写操作由 Skill 约束。可选的 Windows exe（`build_exe.bat` → `dist/VivadoLabReg.exe`）和 `gui.cmd` 是同一个 GUI。exe 不提交，里面也不含 Vivado Lab 或 board profile。
+
+#### 本机 Cursor Agent
+
+在实验机上用 Cursor 打开这个检出，走本机 Agent。Agent 先读 [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md)，再在该目录里跑 JSON 命令行。英文步骤：[Local Cursor Agent](README.md#local-cursor-agent)。Windows 操作说明里的同一节：[docs/usage-zh.md](docs/usage-zh.md#本机-cursor-agent)。
+
+1. **打开检出。** 克隆本仓库，或打开你已经在用的目录。文档里的例子是 Windows 的 `D:\lab\vivado-lab-reg`、Linux 的 `/lab/vivado-lab-reg`。用你自己的路径也可以，只要 Agent 的工作区就是这个检出。
+2. **让 Agent 读到 Skill。** 文件是 `skills/vivado-lab-reg/SKILL.md`。下面三种做一种即可：
+   - 仓库 Skill：工作区是这个检出时，让 Agent 按该文件里的 `vivado-lab-reg` skill 执行。
+   - 在 Agent 消息里附上 `skills/vivado-lab-reg/SKILL.md`。
+   - 告诉 Agent：先读这个文件并照它做，再执行任何 XSDB 命令。
+3. **板子准备不变。** 板上电，bitstream 已加载，关掉 Hardware Manager。见[使用前](#使用前)。第 6 步不连电缆。
+4. **示例提示。** 一次发一条，看 Agent 回报的 `ok`、`command`、`error`。下面的地址是本 README 里的虚构例子。连真板时改成你要访问的寄存器。第三条会改该寄存器，打算写的时候再发。
+   - 只枚举 target：
+
+     ```text
+     读 skills/vivado-lab-reg/SKILL.md 并照它做。只跑 targets。列出 id、name、class。不要读寄存器，不要写。
+     ```
+
+   - 只读某个地址：
+
+     ```text
+     按 skills/vivado-lab-reg/SKILL.md 做。在 MicroBlaze 上读 0x00001000 起的 4 个字。只读。
+     ```
+
+   - 只有你同时写出地址和数据时才写：
+
+     ```text
+     按 skills/vivado-lab-reg/SKILL.md 做。把 0x00000001 写到 MicroBlaze 地址 0x00001000。
+     ```
+
+     提示里缺地址或缺数据时，保持只读。
+5. **Agent 应执行的命令。** 在检出目录中，Windows 跑 `xsdb.cmd --json targets`，接着 `xsdb.cmd --json rd <addr> <len>` 或 `xsdb.cmd --json jrd <addr> <len>`（第二条 JTAG-to-AXI 用 `jrd2`）。Linux 用同样的子命令，写成 `./xsdb.sh --json …`。Agent 解析 stdout 上的那一个 JSON 对象。`ok` 为 false 就停：报告 `error` 后等待，不重试，也不接着写。写命令（`wr`、`jwr`、`wrd`、`jwrd` 或 `#2` 写）只在提示同时点名地址和数据之后才跑，如上面第三条。
+6. **不连板的检查。** `bash tests/test_json_cli.sh` 在没有电缆时检查 JSON 约定。第 4 步的实机提示仍要按第 3 步准备板子。
 
 ---
 
