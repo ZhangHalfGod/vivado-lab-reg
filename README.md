@@ -27,7 +27,7 @@
 4. **Interactive.** `xsdb.cmd` then `mb` / `jtag 1` / `smoke` / `rd` / `wr`. [CLI](#cli)
 5. **Board change.** Click **Refresh targets** and select again; replace smoke bases via profile. [How it works](#how-it-works--board-support)
 
-Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md). Doc index: [docs/README.md](docs/README.md).
+Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md). Doc index: [docs/README.md](docs/README.md). Local Cursor Agent on a lab PC: [Local Cursor Agent](#local-cursor-agent).
 
 ---
 
@@ -42,6 +42,7 @@ Chinese GUI walkthrough: [docs/usage-zh.md](docs/usage-zh.md). Doc index: [docs/
 - [CLI](#cli)
 - [Machine-readable JSON](#machine-readable-json)
 - [Agents / Skill](#agents--skill)
+  - [Local Cursor Agent](#local-cursor-agent)
 - [Packaging](#packaging)
 - [License](#license)
 
@@ -341,6 +342,39 @@ python addr_map.py --xlsx D:\lab\vivado-lab-reg\examples\address.xlsx --suggest-
 Human setup, the GUI, and the interactive CLI stay in this README. Agents and scripts follow [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md): call `xsdb.cmd --json` or `./xsdb.sh --json`, parse the one JSON object on stdout, and stay on `targets`, `rd` / `jrd` / `jrd2`, and `verify` unless the user explicitly asked to write. `wr`, `jwr`, `wrd`, `jwrd`, and the `#2` write forms change the board. An `ok` of false is a stop.
 
 **L3.** An agent or CI job can enumerate targets and peek with `--json` and no board (`bash tests/test_json_cli.sh`). The Skill is what constrains writes. The optional Windows exe (`build_exe.bat` → `dist/VivadoLabReg.exe`) is the same GUI as `gui.cmd`. It is not committed, and it does not include Vivado Lab or a board profile.
+
+#### Local Cursor Agent
+
+On the lab PC, open this checkout in Cursor and use the local Agent. The Agent reads [skills/vivado-lab-reg/SKILL.md](skills/vivado-lab-reg/SKILL.md), then runs the JSON CLI from that folder. The same steps in Chinese: [本机 Cursor Agent](README.zh-CN.md#本机-cursor-agent) and [docs/usage-zh.md](docs/usage-zh.md#本机-cursor-agent).
+
+1. **Open the checkout.** Clone the repo, or open the folder you already use. Paths in this README are `D:\lab\vivado-lab-reg` on Windows and `/lab/vivado-lab-reg` on Linux. Another folder is fine when that folder is the Agent workspace.
+2. **Have the Agent read the Skill.** The file is `skills/vivado-lab-reg/SKILL.md`. One of these is enough:
+   - Repo skill: with this checkout as the workspace, tell the Agent to follow the `vivado-lab-reg` skill in that file.
+   - Attach `skills/vivado-lab-reg/SKILL.md` to the Agent message.
+   - Tell the Agent to read that file and follow it before any XSDB command.
+3. **Board prep is unchanged.** Power the board, load the bitstream, and close Hardware Manager. [Before you start](#before-you-start). Step 6 runs with no cable.
+4. **Example prompts.** Send one at a time, and read the Agent's report of `ok`, `command`, and `error`. The addresses below are the fictional examples in this README. On a live board, name the register you mean. The write prompt changes that register; send it when you intend the write.
+   - Enumerate targets only:
+
+     ```text
+     Read skills/vivado-lab-reg/SKILL.md and follow it. Run targets only. List id, name, and class. Do not read or write registers.
+     ```
+
+   - Peek a named address, read-only:
+
+     ```text
+     Follow skills/vivado-lab-reg/SKILL.md. Read 4 words at 0x00001000 on MicroBlaze. Read only.
+     ```
+
+   - Write only when you name both the address and the data:
+
+     ```text
+     Follow skills/vivado-lab-reg/SKILL.md. Write 0x00000001 to MicroBlaze address 0x00001000.
+     ```
+
+     A prompt that omits the address or the data stays on a read.
+5. **What the Agent runs.** From the checkout, Windows runs `xsdb.cmd --json targets`, then `xsdb.cmd --json rd <addr> <len>` or `xsdb.cmd --json jrd <addr> <len>` (`jrd2` for the second JTAG-to-AXI). Linux runs the same subcommands with `./xsdb.sh --json …`. The Agent parses the one JSON object on stdout. `ok: false` is a stop: report `error` and wait, with no retry and no write after that result. A write (`wr`, `jwr`, `wrd`, `jwrd`, or a `#2` write) runs only after a prompt that names the address and the data, as in the third example.
+6. **Offline check, no board.** `bash tests/test_json_cli.sh` checks the JSON contract with no cable. The live prompts in step 4 still use the board from step 3.
 
 ---
 
